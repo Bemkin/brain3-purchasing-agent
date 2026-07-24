@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import {
-  Package, AlertTriangle, TrendingDown, ShoppingCart,
-  Zap, RefreshCw, Clock, ArrowUpRight,
+  AlertTriangle, TrendingDown, 
+  RefreshCw, Clock, ArrowUpRight,
   Sparkles, Download, Flame, RotateCcw, Filter, Plus,
   ChevronRight, Building2
 } from 'lucide-react';
@@ -67,7 +67,10 @@ export default function DashboardPage() {
     }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    fetchData();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+  }, [fetchData]);
 
   const triggerStockAudit = async () => {
     setAuditRunning(true);
