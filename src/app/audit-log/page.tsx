@@ -28,24 +28,35 @@ const sourceIcons: Record<AuditSource, React.ElementType> = {
 export default function AuditLogPage() {
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(true);
-  const [severityFilter, setSeverityFilter] = useState<string>('');
+  const [severityFilter, setSeverityFilter] = useState<string>('all');
   const [refreshing, setRefreshing] = useState(false);
   const [expandedPayloadId, setExpandedPayloadId] = useState<string | null>(null);
 
+  // Pagination State
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
+  const [totalLogs, setTotalLogs] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+
   const fetchLogs = useCallback(async () => {
     try {
-      const params = new URLSearchParams({ limit: '100' });
-      if (severityFilter) params.set('severity', severityFilter);
+      const params = new URLSearchParams({
+        page: String(page),
+        pageSize: String(pageSize),
+        ...(severityFilter && severityFilter !== 'all' ? { severity: severityFilter } : {}),
+      });
       const res = await fetch(`/api/audit-logs?${params}`);
       const data = await res.json();
       setLogs(data.logs || []);
+      setTotalLogs(data.total || 0);
+      setTotalPages(data.totalPages || 1);
     } catch {
       toast.error('Failed to load audit logs');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [severityFilter]);
+  }, [page, pageSize, severityFilter]);
 
   useEffect(() => { fetchLogs(); }, [fetchLogs]);
 
@@ -198,6 +209,35 @@ export default function AuditLogPage() {
               );
             })}
           </div>
+
+          {/* Bottom Pagination Bar */}
+          {totalLogs > 0 && (
+            <div className="pt-4 border-t border-gray-100 flex items-center justify-between flex-wrap gap-4">
+              <span className="text-xs font-semibold text-gray-500 font-mono">
+                Page {page} of {totalPages || 1} ({totalLogs} total events)
+              </span>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page <= 1}
+                  className="btn-outline-brain3 px-3.5 py-1.5 text-xs disabled:opacity-40"
+                >
+                  Previous
+                </button>
+                <span className="text-xs font-bold text-gray-700 font-mono px-1">
+                  {page} / {totalPages || 1}
+                </span>
+                <button
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={page >= totalPages}
+                  className="btn-outline-brain3 px-3.5 py-1.5 text-xs disabled:opacity-40"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
