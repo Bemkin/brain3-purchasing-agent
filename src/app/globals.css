@@ -1,26 +1,203 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
 
+/* ============================================================
+   Brain3 Purchasing Agent — Donezo Design System
+   Executive Light Theme · Forest Green Palette
+   ============================================================ */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Brand Palette */
+  --brand-forest: #064e3b;
+  --brand-forest-hover: #043e2f;
+  --brand-emerald: #059669;
+  --brand-emerald-light: #d1fae5;
+  --brand-sage: #ecfdf5;
+
+  /* Neutrals */
+  --bg-canvas: #f3f4f6;
+  --bg-card: #ffffff;
+  --bg-sidebar: #ffffff;
+  --text-main: #111827;
+  --text-secondary: #4b5563;
+  --text-muted: #9ca3af;
+  --border-light: #e5e7eb;
+  --border-card: rgba(0, 0, 0, 0.06);
+
+  /* Radius */
+  --radius-sm: 10px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+  --radius-pill: 9999px;
+
+  /* Fonts */
+  --font-sans: 'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+/* ---- Body & Canvas ---- */
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--bg-canvas);
+  color: var(--text-main);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
 }
+
+/* ---- Scrollbar ---- */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+
+/* ---- Donezo Card Container ---- */
+.card-brain3 {
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.025);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.card-brain3:hover {
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.05);
+}
+
+/* Hero Forest Green Card */
+.card-hero-forest {
+  background: linear-gradient(135deg, #064e3b 0%, #047857 100%);
+  color: #ffffff;
+  border-radius: var(--radius-lg);
+  box-shadow: 0 10px 30px rgba(6, 78, 59, 0.25);
+}
+
+/* Dark Wave Execution Timer Card */
+.card-dark-wave {
+  background: radial-gradient(circle at 80% 20%, #064e3b 0%, #022c22 80%);
+  color: #ffffff;
+  border-radius: var(--radius-lg);
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(2, 44, 34, 0.3);
+}
+.card-dark-wave::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 120%, rgba(16, 185, 129, 0.2) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+/* ---- Action Buttons ---- */
+.btn-forest {
+  background: var(--brand-forest);
+  color: #ffffff;
+  padding: 10px 22px;
+  border-radius: var(--radius-pill);
+  font-weight: 600;
+  font-size: 0.875rem;
+  transition: all 0.2s ease;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.btn-forest:hover {
+  background: var(--brand-forest-hover);
+  box-shadow: 0 4px 16px rgba(6, 78, 59, 0.25);
+  transform: translateY(-1px);
+}
+.btn-forest:active { transform: translateY(0); }
+
+.btn-outline-brain3 {
+  background: #ffffff;
+  color: var(--text-main);
+  border: 1.5px solid var(--border-light);
+  padding: 9px 20px;
+  border-radius: var(--radius-pill);
+  font-weight: 600;
+  font-size: 0.875rem;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.btn-outline-brain3:hover {
+  background: #f9fafb;
+  border-color: #d1d5db;
+  transform: translateY(-1px);
+}
+
+.btn-arrow-circle {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(0, 0, 0, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+  color: var(--text-main);
+  transition: all 0.2s ease;
+}
+.btn-arrow-circle:hover {
+  background: #f3f4f6;
+  transform: scale(1.05);
+}
+
+/* ---- Status Badges (Donezo Pills) ---- */
+.badge-brain3 {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 12px;
+  border-radius: var(--radius-pill);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.badge-brain3-success {
+  background: #d1fae5;
+  color: #065f46;
+}
+.badge-brain3-warning {
+  background: #fef3c7;
+  color: #92400e;
+}
+.badge-brain3-critical {
+  background: #fee2e2;
+  color: #991b1b;
+}
+.badge-brain3-neutral {
+  background: #f3f4f6;
+  color: #4b5563;
+}
+
+/* ---- Donezo Table ---- */
+.brain3-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.brain3-table th {
+  text-align: left;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border-light);
+}
+.donezo-table td {
+  padding: 16px 20px;
+  border-bottom: 1px solid #f3f4f6;
+  font-size: 0.875rem;
+  color: var(--text-main);
+}
+.donezo-table tbody tr:hover {
+  background: #fafafa;
+}
+
+/* Pulse animation */
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.85); }
+}
+.pulse-green { animation: pulseDot 1.5s ease-in-out infinite; }
