@@ -14,7 +14,7 @@ export const genAI = {
   },
 };
 
-export const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+export const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
 
 /**
  * Build the system prompt for reorder analysis.

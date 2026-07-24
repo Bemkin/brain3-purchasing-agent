@@ -5,7 +5,8 @@
 export function generatePONumber(sequenceNumber: number): string {
   const year = new Date().getFullYear();
   const padded = String(sequenceNumber).padStart(4, '0');
-  return `PO-${year}-${padded}`;
+  const uniqueTime = String(Date.now()).slice(-3);
+  return `PO-${year}-${padded}${uniqueTime}`;
 }
 
 /**

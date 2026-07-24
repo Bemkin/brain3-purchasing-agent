@@ -162,13 +162,13 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         </div>
         <div>
           <p className="text-sm font-bold text-white leading-tight">Autonomous Agent</p>
-          <p className="text-xs text-gray-300 mt-1">Gemini AI engine active</p>
+          <p className="text-xs text-gray-300 mt-1">Gemini 3.5 Flash Lite engine active</p>
         </div>
         <Link
           href="/settings"
           onClick={() => {
             toast.success('AI Engine Operational', {
-              description: 'Gemini AI Engine • Supabase PostgreSQL Connected • Resend Active',
+              description: 'Gemini 3.5 Flash Lite Engine • Supabase PostgreSQL Connected • Resend Active',
             });
             if (onClose) onClose();
           }}
