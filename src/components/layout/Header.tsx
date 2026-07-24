@@ -153,7 +153,7 @@ export function Header({ onOpenMobileMenu }: HeaderProps) {
   const unreadCount = notifications.filter((n) => !n.read).length;
 
   return (
-    <header className="bg-[#f3f4f6] px-4 sm:px-8 py-4 flex items-center justify-between border-b border-gray-200/50 shrink-0 gap-3 relative z-30">
+    <header className="bg-white/95 backdrop-blur-md px-4 sm:px-8 py-3.5 flex items-center justify-between border-b border-gray-200/80 shadow-xs shrink-0 gap-3 relative z-30">
       <div className="flex items-center gap-3">
         {/* Mobile Menu Toggle Button */}
         <button
