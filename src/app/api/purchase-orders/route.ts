@@ -12,53 +12,52 @@ export async function GET(request: Request) {
     const supabase = createServerSupabaseClient();
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status');
+    const page = parseInt(searchParams.get('page') || '1', 10);
+    const pageSize = parseInt(searchParams.get('pageSize') || '15', 10);
+
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
 
     let query = supabase
       .from('purchase_orders')
-      .select(`
+      .select(
+        `
         id, po_number, supplier_id, status, total_amount, currency,
         notes, ai_reasoning, created_by, approved_by, sent_at,
         created_at, updated_at,
-        suppliers:supplier_id (id, name, contact_email)
-      `)
+        supplier:suppliers (id, name, contact_email),
+        line_items:po_line_items (
+          id, quantity_ordered, unit_cost, total_cost,
+          inventory_item:inventory_items (id, name, sku, current_stock)
+        )
+      `,
+        { count: 'exact' }
+      )
       .order('created_at', { ascending: false });
 
-    if (status) {
+    if (status && status !== 'all') {
       query = query.eq('status', status);
     }
 
-    const { data, error } = await query;
+    // Apply pagination bounds if specified
+    if (searchParams.has('page')) {
+      query = query.range(from, to);
+    }
+
+    const { data, error, count } = await query;
 
     if (error) {
       console.error('Failed to fetch purchase orders:', error);
       return NextResponse.json({ error: 'Failed to fetch purchase orders' }, { status: 500 });
     }
 
-    // For each PO, fetch line items
-    const posWithItems = await Promise.all(
-      (data || []).map(async (po) => {
-        const { data: lineItems } = await supabase
-          .from('po_line_items')
-          .select(`
-            id, quantity_ordered, unit_cost, total_cost,
-            inventory_items:inventory_item_id (id, name, sku, current_stock)
-          `)
-          .eq('purchase_order_id', po.id);
-
-        return {
-          ...po,
-          supplier: po.suppliers,
-          suppliers: undefined,
-          line_items: (lineItems || []).map((li) => ({
-            ...li,
-            inventory_item: li.inventory_items,
-            inventory_items: undefined,
-          })),
-        };
-      })
-    );
-
-    return NextResponse.json({ purchase_orders: posWithItems });
+    return NextResponse.json({
+      purchase_orders: data || [],
+      total: count || (data ? data.length : 0),
+      page,
+      pageSize,
+      totalPages: Math.ceil((count || (data ? data.length : 0)) / pageSize),
+    });
   } catch (err) {
     console.error('Purchase orders error:', err);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

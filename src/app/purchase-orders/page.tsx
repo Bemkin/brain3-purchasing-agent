@@ -50,17 +50,32 @@ export default function PurchaseOrdersPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
+  // Pagination & Filtering State
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [totalCount, setTotalCount] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+
   const fetchOrders = useCallback(async () => {
+    setLoading(true);
     try {
-      const res = await fetch('/api/purchase-orders');
+      const params = new URLSearchParams({
+        page: String(page),
+        pageSize: String(pageSize),
+        ...(statusFilter !== 'all' ? { status: statusFilter } : {}),
+      });
+      const res = await fetch(`/api/purchase-orders?${params.toString()}`);
       const data = await res.json();
       setOrders(data.purchase_orders || []);
+      setTotalCount(data.total || 0);
+      setTotalPages(data.totalPages || 1);
     } catch {
       toast.error('Failed to load purchase orders');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [page, pageSize, statusFilter]);
 
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
 
@@ -269,6 +284,59 @@ export default function PurchaseOrdersPage() {
         </div>
       </div>
 
+      {/* Filter Tabs & Pagination Control Bar */}
+      <div className="card-brain3 p-4 flex items-center justify-between flex-wrap gap-4">
+        {/* Status Filter Pills */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {[
+            { id: 'all', label: 'All Orders' },
+            { id: 'pending_approval', label: 'Pending Approval' },
+            { id: 'approved', label: 'Approved' },
+            { id: 'sent', label: 'Sent' },
+            { id: 'cancelled', label: 'Cancelled' },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => {
+                setStatusFilter(tab.id);
+                setPage(1);
+              }}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all ${
+                statusFilter === tab.id
+                  ? 'bg-[#064e3b] text-white shadow-sm'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Pagination Controls */}
+        <div className="flex items-center gap-3">
+          <span className="text-xs font-semibold text-gray-500 font-mono">
+            Page {page} of {totalPages || 1} ({totalCount} total)
+          </span>
+
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1}
+              className="btn-outline-brain3 px-3 py-1.5 text-xs disabled:opacity-40"
+            >
+              Prev
+            </button>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+              className="btn-outline-brain3 px-3 py-1.5 text-xs disabled:opacity-40"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Orders Feed */}
       {orders.length === 0 ? (
         <div className="card-brain3 p-16 text-center">
@@ -433,6 +501,35 @@ export default function PurchaseOrdersPage() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Bottom Pagination Bar */}
+      {totalCount > 0 && (
+        <div className="card-brain3 p-4 flex items-center justify-between flex-wrap gap-4">
+          <span className="text-xs font-semibold text-gray-500 font-mono">
+            Showing {((page - 1) * pageSize) + 1} to {Math.min(page * pageSize, totalCount)} of {totalCount} purchase orders
+          </span>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1}
+              className="btn-outline-brain3 px-4 py-2 text-xs disabled:opacity-40"
+            >
+              Previous Page
+            </button>
+            <span className="text-xs font-bold text-gray-700 font-mono px-2">
+              {page} / {totalPages || 1}
+            </span>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+              className="btn-outline-brain3 px-4 py-2 text-xs disabled:opacity-40"
+            >
+              Next Page
+            </button>
+          </div>
         </div>
       )}
     </div>
