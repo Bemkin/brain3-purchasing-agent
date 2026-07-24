@@ -29,7 +29,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const [poCount, setPoCount] = useState<number | null>(null);
 
   useEffect(() => {
-    fetch('/api/purchase-orders?pageSize=1')
+    fetch('/api/purchase-orders?status=pending_approval&pageSize=1')
       .then((res) => res.json())
       .then((data) => {
         if (data.total !== undefined) {
@@ -45,7 +45,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
 
   const menuItems = [
     { href: '/', label: 'Dashboard', icon: LayoutDashboard },
-    { href: '/purchase-orders', label: 'Purchase Orders', icon: ShoppingCart, count: poCount !== null ? String(poCount) : undefined },
+    { href: '/purchase-orders', label: 'Purchase Orders', icon: ShoppingCart, count: poCount && poCount > 0 ? String(poCount) : undefined },
     { href: '/suppliers', label: 'Suppliers', icon: Building2 },
     { href: '/audit-log', label: 'Audit Log', icon: ScrollText },
   ];
