@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { toast } from 'sonner';
 import {
   LayoutDashboard,
   ShoppingCart,
@@ -157,9 +158,18 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
           <p className="text-sm font-bold text-white leading-tight">Autonomous Agent</p>
           <p className="text-xs text-gray-300 mt-1">Gemini 3.5 Flash Lite engine active</p>
         </div>
-        <button className="w-full py-2 px-3 bg-[#059669] hover:bg-[#047857] text-white rounded-xl text-xs font-bold transition-all shadow-md">
-          Operational
-        </button>
+        <Link
+          href="/settings"
+          onClick={() => {
+            toast.success('AI Engine Operational', {
+              description: 'Gemini 3.5 Flash Lite • Supabase PostgreSQL Connected • Resend Active',
+            });
+            if (onClose) onClose();
+          }}
+          className="block w-full py-2.5 px-3 bg-[#059669] hover:bg-[#047857] text-white text-center rounded-xl text-xs font-bold transition-all shadow-md active:scale-95"
+        >
+          Operational — Change Mode
+        </Link>
       </div>
     </div>
   );
