@@ -14,15 +14,15 @@
   --brand-emerald-light: #d1fae5;
   --brand-sage: #ecfdf5;
 
-  /* Neutrals */
-  --bg-canvas: #f3f4f6;
+  /* Neutrals — High Contrast Canvas & Cards */
+  --bg-canvas: #e5e7eb;
   --bg-card: #ffffff;
-  --bg-sidebar: #ffffff;
+  --bg-sidebar: #f1f5f9;
   --text-main: #111827;
   --text-secondary: #4b5563;
-  --text-muted: #9ca3af;
-  --border-light: #e5e7eb;
-  --border-card: rgba(0, 0, 0, 0.06);
+  --text-muted: #6b7280;
+  --border-light: #cbd5e1;
+  --border-card: #cbd5e1;
 
   /* Radius */
   --radius-sm: 10px;
@@ -46,19 +46,20 @@ body {
 /* ---- Scrollbar ---- */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 10px; }
-::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: #64748b; }
 
 /* ---- Donezo Card Container ---- */
 .card-brain3 {
   background: var(--bg-card);
-  border: 1px solid var(--border-card);
+  border: 1px solid #cbd5e1;
   border-radius: var(--radius-lg);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.025);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04);
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .card-brain3:hover {
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.05);
+  border-color: #94a3b8;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.07);
 }
 
 /* Hero Forest Green Card */

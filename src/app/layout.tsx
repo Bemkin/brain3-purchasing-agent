@@ -15,7 +15,7 @@ export default function RootLayout({
 
   return (
     <html lang="en">
-      <body className="bg-[#f3f4f6] text-gray-900 font-sans min-h-screen">
+      <body className="bg-[#e5e7eb] text-gray-900 font-sans min-h-screen">
         <div className="flex h-screen overflow-hidden">
           {/* Sidebar */}
           <Sidebar isOpen={mobileMenuOpen} onClose={() => setMobileMenuOpen(false)} />

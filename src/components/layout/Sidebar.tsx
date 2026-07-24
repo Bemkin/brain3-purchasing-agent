@@ -54,7 +54,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   ];
 
   const content = (
-    <div className="w-[260px] h-full bg-[#f8fafc] flex flex-col justify-between p-6 overflow-y-auto border-r border-gray-200/80">
+    <div className="w-[260px] h-full bg-[#eaedf1] flex flex-col justify-between p-6 overflow-y-auto border-r border-slate-300/90 shadow-xs">
       <div className="space-y-8">
         {/* Brand Header */}
         <div className="flex items-center justify-between">
