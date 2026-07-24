@@ -3,6 +3,7 @@ import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { genAI, GEMINI_MODEL, buildReorderSystemPrompt, buildReorderUserPrompt } from '@/lib/ai/gemini';
 import { BatchReorderResponseSchema } from '@/lib/schemas';
 import { generatePONumber, calculateFallbackReorderQty } from '@/lib/utils/helpers';
+import { dispatchPOEmail } from '@/lib/services/email';
 import type { StockCheckResult } from '@/lib/types/database';
 
 /**
@@ -400,22 +401,14 @@ export async function POST(request: Request) {
               }),
         ]);
 
-        // Auto-pilot email (fire-and-forget style, don't block other suppliers)
+        // Auto-pilot email dispatch (in-memory execution, 100% reliable on Vercel)
         let emailSent = false;
         if (operatingMode === 'auto_pilot') {
           try {
-            const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-            const emailResponse = await fetch(`${appUrl}/api/email/send-po`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ purchaseOrderId: po.id }),
-            });
-            emailSent = emailResponse.ok;
-            if (!emailSent) {
-              console.error('Auto-send email failed:', await emailResponse.text());
-            }
+            await dispatchPOEmail(po.id);
+            emailSent = true;
           } catch (emailErr) {
-            console.error('Auto-send email error:', emailErr);
+            console.error('Auto-pilot email dispatch error:', emailErr);
           }
         }
 
