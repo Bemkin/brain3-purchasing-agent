@@ -128,9 +128,29 @@ export const UpdateSettingSchema = z.object({
   value: z.unknown(),
 });
 
-// ---- Cron Auth Schema ----
-export const CronAuthSchema = z.object({
-  secret: z.string().optional(),
+// ---- Supplier Schemas ----
+export const CreateSupplierSchema = z.object({
+  name: z.string().min(1, 'Name is required'),
+  contact_email: z.string().email('Invalid email address'),
+  contact_phone: z.string().nullable().optional(),
+  lead_time_days: z.coerce.number().int().positive().default(3),
+});
+
+export const UpdateSupplierSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string().min(1).optional(),
+  contact_email: z.string().email().optional(),
+  contact_phone: z.string().nullable().optional(),
+  lead_time_days: z.coerce.number().int().positive().optional(),
+});
+
+// ---- Simulation & Email Action Schemas ----
+export const SimulateInventorySchema = z.object({
+  action: z.enum(['simulate_surge', 'reset_stock']),
+});
+
+export const SendPOEmailSchema = z.object({
+  purchaseOrderId: z.string().uuid('Invalid purchase order ID'),
 });
 
 // Type inference helpers
@@ -139,3 +159,8 @@ export type UpdatePOStatus = z.infer<typeof UpdatePOStatusSchema>;
 export type CreateAuditLog = z.infer<typeof CreateAuditLogSchema>;
 export type UpdateSetting = z.infer<typeof UpdateSettingSchema>;
 export type BatchReorderResponse = z.infer<typeof BatchReorderResponseSchema>;
+export type CreateSupplier = z.infer<typeof CreateSupplierSchema>;
+export type UpdateSupplier = z.infer<typeof UpdateSupplierSchema>;
+export type SimulateInventory = z.infer<typeof SimulateInventorySchema>;
+export type SendPOEmail = z.infer<typeof SendPOEmailSchema>;
+

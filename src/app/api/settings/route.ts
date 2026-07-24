@@ -16,7 +16,6 @@ export async function GET() {
       .order('key', { ascending: true });
 
     if (error) {
-      console.error('Failed to fetch settings:', error);
       return NextResponse.json({ error: 'Failed to fetch settings' }, { status: 500 });
     }
 
@@ -27,8 +26,7 @@ export async function GET() {
     });
 
     return NextResponse.json({ settings: settingsMap, raw: data });
-  } catch (err) {
-    console.error('Settings error:', err);
+  } catch {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
@@ -60,7 +58,6 @@ export async function PUT(request: Request) {
       .single();
 
     if (error) {
-      console.error('Failed to update setting:', error);
       return NextResponse.json({ error: 'Failed to update setting' }, { status: 500 });
     }
 
@@ -76,8 +73,8 @@ export async function PUT(request: Request) {
     }
 
     return NextResponse.json({ setting: data });
-  } catch (err) {
-    console.error('Settings update error:', err);
+  } catch {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
+

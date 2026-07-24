@@ -104,11 +104,14 @@ CREATE INDEX IF NOT EXISTS idx_inventory_items_supplier_id ON public.inventory_i
 CREATE INDEX IF NOT EXISTS idx_inventory_items_sku ON public.inventory_items(sku);
 CREATE INDEX IF NOT EXISTS idx_inventory_items_reorder ON public.inventory_items(current_stock, reorder_point) WHERE is_active = true;
 CREATE INDEX IF NOT EXISTS idx_purchase_orders_status ON public.purchase_orders(status);
+CREATE INDEX IF NOT EXISTS idx_purchase_orders_status_created ON public.purchase_orders(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_purchase_orders_supplier_id ON public.purchase_orders(supplier_id);
 CREATE INDEX IF NOT EXISTS idx_po_line_items_po_id ON public.po_line_items(purchase_order_id);
 CREATE INDEX IF NOT EXISTS idx_po_line_items_item_id ON public.po_line_items(inventory_item_id);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_action_type ON public.ai_audit_logs(action_type);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON public.ai_audit_logs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_severity_created ON public.ai_audit_logs(severity, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_source_created ON public.ai_audit_logs(source, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_po_id ON public.ai_audit_logs(related_po_id) WHERE related_po_id IS NOT NULL;
 
 -- ============================================================

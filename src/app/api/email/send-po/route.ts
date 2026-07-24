@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { dispatchPOEmail } from '@/lib/services/email';
+import { SendPOEmailSchema } from '@/lib/schemas';
 
 /**
  * POST /api/email/send-po
@@ -7,12 +8,17 @@ import { dispatchPOEmail } from '@/lib/services/email';
  */
 export async function POST(request: Request) {
   try {
-    const { purchaseOrderId } = await request.json();
+    const body = await request.json();
+    const parsed = SendPOEmailSchema.safeParse(body);
 
-    if (!purchaseOrderId) {
-      return NextResponse.json({ error: 'Missing purchaseOrderId' }, { status: 400 });
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Invalid purchaseOrderId', details: parsed.error.flatten() },
+        { status: 400 }
+      );
     }
 
+    const { purchaseOrderId } = parsed.data;
     const result = await dispatchPOEmail(purchaseOrderId);
 
     return NextResponse.json({
@@ -21,10 +27,10 @@ export async function POST(request: Request) {
       message: `PO ${result.poNumber} sent successfully`,
     });
   } catch (err) {
-    console.error('Send PO email error:', err);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Internal server error' },
       { status: 500 }
     );
   }
 }
+

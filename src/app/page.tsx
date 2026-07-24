@@ -654,21 +654,3 @@ export default function DashboardPage() {
   );
 }
 
-// ---- Stat Card Component ----
-function StatCard({
-  icon: Icon,
-  label,
-  value,
-  subtitle,
-  color,
-  pulse,
-}: {
-  icon: React.ElementType;
-  label: string;
-  value: number;
-  subtitle: string;
-  color: 'indigo' | 'red' | 'amber' | 'emerald';
-  pulse?: boolean;
-}) {
-  return null;
-}

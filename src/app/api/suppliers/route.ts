@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { CreateSupplierSchema, UpdateSupplierSchema } from '@/lib/schemas';
 
 /**
  * GET /api/suppliers
@@ -20,7 +21,6 @@ export async function GET() {
       .order('name', { ascending: true });
 
     if (error) {
-      console.error('Failed to fetch suppliers:', error);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
@@ -46,8 +46,7 @@ export async function GET() {
     });
 
     return NextResponse.json({ suppliers: formattedSuppliers });
-  } catch (err) {
-    console.error('Suppliers GET error:', err);
+  } catch {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
@@ -61,11 +60,15 @@ export async function POST(request: Request) {
     const supabase = createServerSupabaseClient();
     const body = await request.json();
 
-    const { name, contact_email, contact_phone, lead_time_days } = body;
-
-    if (!name || !contact_email) {
-      return NextResponse.json({ error: 'Name and contact email are required' }, { status: 400 });
+    const parsed = CreateSupplierSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Invalid request data', details: parsed.error.flatten() },
+        { status: 400 }
+      );
     }
+
+    const { name, contact_email, contact_phone, lead_time_days } = parsed.data;
 
     const { data: supplier, error } = await supabase
       .from('suppliers')
@@ -73,13 +76,12 @@ export async function POST(request: Request) {
         name,
         contact_email,
         contact_phone: contact_phone || null,
-        lead_time_days: Number(lead_time_days) || 3,
+        lead_time_days,
       })
       .select('id, name, contact_email, lead_time_days')
       .single();
 
     if (error) {
-      console.error('Failed to create supplier:', error);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
@@ -93,8 +95,7 @@ export async function POST(request: Request) {
     });
 
     return NextResponse.json({ supplier }, { status: 201 });
-  } catch (err) {
-    console.error('Suppliers POST error:', err);
+  } catch {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
@@ -107,11 +108,16 @@ export async function PATCH(request: Request) {
   try {
     const supabase = createServerSupabaseClient();
     const body = await request.json();
-    const { id, address, ...updates } = body;
 
-    if (!id) {
-      return NextResponse.json({ error: 'Missing supplier ID' }, { status: 400 });
+    const parsed = UpdateSupplierSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Invalid supplier update', details: parsed.error.flatten() },
+        { status: 400 }
+      );
     }
+
+    const { id, ...updates } = parsed.data;
 
     const { data: supplier, error } = await supabase
       .from('suppliers')
@@ -121,13 +127,12 @@ export async function PATCH(request: Request) {
       .single();
 
     if (error) {
-      console.error('Failed to update supplier:', error);
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
     return NextResponse.json({ supplier });
-  } catch (err) {
-    console.error('Suppliers PATCH error:', err);
+  } catch {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
+

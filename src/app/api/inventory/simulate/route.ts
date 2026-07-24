@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
+import { SimulateInventorySchema } from '@/lib/schemas';
 
 /**
  * POST /api/inventory/simulate
@@ -9,7 +10,17 @@ export async function POST(request: Request) {
   const supabase = createServerSupabaseClient();
 
   try {
-    const { action } = await request.json();
+    const body = await request.json();
+    const parsed = SimulateInventorySchema.safeParse(body);
+
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: 'Invalid action', details: parsed.error.flatten() },
+        { status: 400 }
+      );
+    }
+
+    const { action } = parsed.data;
 
     if (action === 'simulate_surge') {
       // Fetch all items to randomize selection
@@ -89,8 +100,8 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
-  } catch (err) {
-    console.error('Simulation error:', err);
+  } catch {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
+

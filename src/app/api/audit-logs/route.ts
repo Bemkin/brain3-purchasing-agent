@@ -38,7 +38,6 @@ export async function GET(request: Request) {
     const { data, error, count } = await query;
 
     if (error) {
-      console.error('Failed to fetch audit logs:', error);
       return NextResponse.json({ error: 'Failed to fetch audit logs' }, { status: 500 });
     }
 
@@ -49,8 +48,8 @@ export async function GET(request: Request) {
       pageSize,
       totalPages: Math.ceil((count || (data ? data.length : 0)) / pageSize),
     });
-  } catch (err) {
-    console.error('Audit logs error:', err);
+  } catch {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
+

@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { Search, Bell, Mail, Menu, Package, FileText, Bot, X, CheckCircle2, AlertTriangle, ArrowRight, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatCurrency, formatRelativeTime } from '@/lib/utils/helpers';
+import type { InventoryItem, PurchaseOrder } from '@/lib/types/database';
 
 interface HeaderProps {
   onOpenMobileMenu: () => void;
@@ -58,9 +59,9 @@ export function Header({ onOpenMobileMenu }: HeaderProps) {
     fetch('/api/inventory')
       .then((res) => res.json())
       .then((data) => {
-        const items = data.items || [];
-        const low = items.filter((i: any) => i.current_stock <= i.reorder_point);
-        const notifs = low.map((item: any, idx: number) => ({
+        const items: InventoryItem[] = data.items || [];
+        const low = items.filter((i) => i.current_stock <= i.reorder_point);
+        const notifs = low.map((item) => ({
           id: `low-${item.id}`,
           title: `Low Stock Alert: ${item.name}`,
           text: `Current stock: ${item.current_stock} (Reorder point: ${item.reorder_point})`,
@@ -70,14 +71,16 @@ export function Header({ onOpenMobileMenu }: HeaderProps) {
         }));
         setNotifications(notifs);
       })
-      .catch(() => {});
+      .catch((err) => {
+        toast.error('Failed to load stock alerts');
+      });
 
     // Fetch POs for mail log
     fetch('/api/purchase-orders')
       .then((res) => res.json())
       .then((data) => {
-        const orders = data.purchase_orders || [];
-        const logs = orders.map((po: any) => ({
+        const orders: (PurchaseOrder & { supplier?: { contact_email?: string } })[] = data.purchase_orders || [];
+        const logs = orders.map((po) => ({
           id: po.id,
           po_number: po.po_number,
           recipient: po.supplier?.contact_email || 'supplier@vendor.com',
@@ -104,10 +107,10 @@ export function Header({ onOpenMobileMenu }: HeaderProps) {
       fetch('/api/purchase-orders').then((r) => r.json()),
     ])
       .then(([invData, poData]) => {
-        const invItems: SearchItem[] = (invData.items || [])
-          .filter((i: any) => i.name.toLowerCase().includes(q) || i.sku.toLowerCase().includes(q) || i.category.toLowerCase().includes(q))
+        const invItems: SearchItem[] = ((invData.items || []) as InventoryItem[])
+          .filter((i) => i.name.toLowerCase().includes(q) || i.sku.toLowerCase().includes(q) || i.category.toLowerCase().includes(q))
           .slice(0, 4)
-          .map((i: any) => ({
+          .map((i) => ({
             id: i.id,
             type: 'inventory',
             title: i.name,
@@ -116,10 +119,10 @@ export function Header({ onOpenMobileMenu }: HeaderProps) {
             url: `/?item=${i.id}`,
           }));
 
-        const poItems: SearchItem[] = (poData.purchase_orders || [])
-          .filter((po: any) => po.po_number.toLowerCase().includes(q) || po.supplier?.name?.toLowerCase().includes(q))
+        const poItems: SearchItem[] = ((poData.purchase_orders || []) as (PurchaseOrder & { supplier?: { name?: string } })[])
+          .filter((po) => po.po_number.toLowerCase().includes(q) || po.supplier?.name?.toLowerCase().includes(q))
           .slice(0, 4)
-          .map((po: any) => ({
+          .map((po) => ({
             id: po.id,
             type: 'po',
             title: `PO ${po.po_number}`,

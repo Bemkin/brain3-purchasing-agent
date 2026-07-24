@@ -47,7 +47,6 @@ export async function GET(request: Request) {
     const { data, error, count } = await query;
 
     if (error) {
-      console.error('Failed to fetch purchase orders:', error);
       return NextResponse.json({ error: 'Failed to fetch purchase orders' }, { status: 500 });
     }
 
@@ -58,8 +57,7 @@ export async function GET(request: Request) {
       pageSize,
       totalPages: Math.ceil((count || (data ? data.length : 0)) / pageSize),
     });
-  } catch (err) {
-    console.error('Purchase orders error:', err);
+  } catch {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
@@ -112,7 +110,6 @@ export async function POST(request: Request) {
       .single();
 
     if (poError || !po) {
-      console.error('Failed to create PO:', poError);
       return NextResponse.json({ error: 'Failed to create purchase order' }, { status: 500 });
     }
 
@@ -130,15 +127,13 @@ export async function POST(request: Request) {
       .insert(lineItemsInsert);
 
     if (liError) {
-      console.error('Failed to insert line items:', liError);
       // Rollback PO
       await supabase.from('purchase_orders').delete().eq('id', po.id);
       return NextResponse.json({ error: 'Failed to create line items' }, { status: 500 });
     }
 
     return NextResponse.json({ purchase_order: po }, { status: 201 });
-  } catch (err) {
-    console.error('Create PO error:', err);
+  } catch {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
@@ -184,7 +179,6 @@ export async function PATCH(request: Request) {
       .single();
 
     if (error) {
-      console.error('Failed to update PO status:', error);
       return NextResponse.json({ error: 'Failed to update purchase order' }, { status: 500 });
     }
 
@@ -208,8 +202,8 @@ export async function PATCH(request: Request) {
     });
 
     return NextResponse.json({ purchase_order: data });
-  } catch (err) {
-    console.error('Update PO error:', err);
+  } catch {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
+

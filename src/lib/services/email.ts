@@ -94,18 +94,17 @@ export async function dispatchPOEmail(purchaseOrderId: string) {
     </div>`;
 
   // Send email via Resend
-  const recipientEmail = process.env.RESEND_RECIPIENT_EMAIL || 'bemnetkibret4@gmail.com';
+  const recipientEmail = process.env.RESEND_RECIPIENT_EMAIL || supplier.contact_email;
+  const senderEmail = process.env.RESEND_FROM_EMAIL || 'Brain3 AI Purchasing Agent <onboarding@resend.dev>';
 
   const { data: emailResult, error: emailError } = await resend.emails.send({
-    from: 'Brain3 AI Purchasing Agent <onboarding@resend.dev>',
+    from: senderEmail,
     to: [recipientEmail],
     subject: `Purchase Order ${po.po_number} — ${supplier.name}`,
     html: emailHtml,
   });
 
   if (emailError) {
-    console.error('Resend email error:', emailError);
-
     await supabase.from('ai_audit_logs').insert({
       action_type: 'email_failed',
       severity: 'error',

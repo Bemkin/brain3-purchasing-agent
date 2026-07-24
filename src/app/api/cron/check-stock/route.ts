@@ -31,8 +31,7 @@ export async function POST(request: Request) {
   const isManualTrigger = request.headers.get('x-trigger-source') === 'dashboard';
 
   if (!isManualTrigger && secret !== process.env.CRON_SECRET) {
-    // Allow manual triggers from the dashboard without cron secret
-    // In production, this would be stricter
+    return NextResponse.json({ error: 'Unauthorized cron access' }, { status: 401 });
   }
 
   const result: StockCheckResult = {
@@ -154,8 +153,8 @@ export async function POST(request: Request) {
       };
     });
 
-    // Fire AI request + analysis log in parallel
-    const [, , aiResponse] = await Promise.all([
+    // Fire AI request + analysis log + PO count in parallel
+    const [, countRes, aiResponse] = await Promise.all([
       supabase.from('ai_audit_logs').insert({
         action_type: 'reorder_analysis_requested',
         severity: 'info',
@@ -178,11 +177,7 @@ export async function POST(request: Request) {
       }).catch((err: Error) => err),
     ]);
 
-    // Get PO count result (fetched in parallel above)
-    const { count: existingPoCount } = await supabase
-      .from('purchase_orders')
-      .select('id', { count: 'exact', head: true });
-    const poCounter = existingPoCount || 0;
+    const poCounter = countRes.count || 0;
 
     const aiBatchResultsMap = new Map<string, unknown>();
     let batchAIFailed = false;
@@ -191,7 +186,6 @@ export async function POST(request: Request) {
     if (aiResponse instanceof Error) {
       batchAIFailed = true;
       batchAIErrorMsg = aiResponse.message;
-      console.warn('Batch AI analysis failed, falling back per supplier:', aiResponse);
     } else {
       try {
         const rawText = aiResponse.text?.trim() || '';
@@ -408,7 +402,13 @@ export async function POST(request: Request) {
             await dispatchPOEmail(po.id);
             emailSent = true;
           } catch (emailErr) {
-            console.error('Auto-pilot email dispatch error:', emailErr);
+            await supabase.from('ai_audit_logs').insert({
+              action_type: 'email_failed',
+              severity: 'error',
+              message: `Auto-pilot email dispatch error for PO ${po.po_number}: ${emailErr instanceof Error ? emailErr.message : String(emailErr)}`,
+              details: { po_id: po.id, error: String(emailErr) },
+              source: 'email_service',
+            });
           }
         }
 
@@ -423,7 +423,13 @@ export async function POST(request: Request) {
         if (settled.value.emailSent) result.pos_auto_sent++;
       } else {
         result.errors++;
-        console.error('Supplier processing failed:', settled.reason);
+        await supabase.from('ai_audit_logs').insert({
+          action_type: 'system_error',
+          severity: 'error',
+          message: `Supplier processing failed: ${settled.reason instanceof Error ? settled.reason.message : String(settled.reason)}`,
+          details: { error: String(settled.reason) },
+          source: 'system',
+        });
       }
     }
 
@@ -445,8 +451,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json(result);
   } catch (err) {
-    console.error('Stock check critical error:', err);
-
     await supabase.from('ai_audit_logs').insert({
       action_type: 'system_error',
       severity: 'critical',

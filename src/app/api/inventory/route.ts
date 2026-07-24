@@ -22,13 +22,12 @@ export async function GET() {
       .order('current_stock', { ascending: true });
 
     if (error) {
-      console.error('Failed to fetch inventory:', error);
       return NextResponse.json({ error: 'Failed to fetch inventory' }, { status: 500 });
     }
 
     return NextResponse.json({ items: data || [] });
-  } catch (err) {
-    console.error('Inventory error:', err);
+  } catch {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
+

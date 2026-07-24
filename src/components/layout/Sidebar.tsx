@@ -15,13 +15,6 @@ import {
   X
 } from 'lucide-react';
 
-const menuItems = [
-  { href: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/purchase-orders', label: 'Purchase Orders', icon: ShoppingCart, hasBadge: true },
-  { href: '/suppliers', label: 'Suppliers', icon: Building2 },
-  { href: '/audit-log', label: 'Audit Log', icon: ScrollText },
-];
-
 const generalItems = [
   { href: '/settings', label: 'Settings', icon: Settings },
 ];
