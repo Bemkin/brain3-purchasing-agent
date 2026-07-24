@@ -1,14 +1,20 @@
 import { GoogleGenAI } from '@google/genai';
 
-const apiKey = process.env.GEMINI_API_KEY;
-
-if (!apiKey) {
-  throw new Error('Missing GEMINI_API_KEY environment variable');
+export function getGenAI(): GoogleGenAI {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error('Missing GEMINI_API_KEY environment variable');
+  }
+  return new GoogleGenAI({ apiKey });
 }
 
-export const genAI = new GoogleGenAI({ apiKey });
+export const genAI = {
+  get models() {
+    return getGenAI().models;
+  },
+};
 
-export const GEMINI_MODEL = 'gemini-3.5-flash-lite';
+export const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
 /**
  * Build the system prompt for reorder analysis.

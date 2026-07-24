@@ -75,16 +75,16 @@ export const BatchReorderResponseSchema = z.object({
       sku: z.string().optional(),
       inventory_item_id: z.string().optional(),
       item_name: z.string().optional(),
-      current_stock: z.number().optional(),
-      recommended_quantity: z.number().positive(),
-      unit_cost: z.number().nonnegative().optional(),
-      reasoning: z.string(),
+      current_stock: z.coerce.number().optional(),
+      recommended_quantity: z.coerce.number().positive(),
+      unit_cost: z.coerce.number().nonnegative().optional(),
+      reasoning: z.string().catch('AI Recommended reorder quantity based on velocity and lead time.'),
       urgency: UrgencyEnum.optional(),
-      estimated_days_until_stockout: z.number().nonnegative().optional(),
+      estimated_days_until_stockout: z.coerce.number().nonnegative().optional(),
     })
   ),
   overall_urgency: UrgencyEnum.optional(),
-  total_estimated_cost: z.number().nonnegative().optional(),
+  total_estimated_cost: z.coerce.number().nonnegative().optional(),
 });
 
 // ---- Audit Log Schemas ----
@@ -105,6 +105,8 @@ export const AuditActionTypeEnum = z.enum([
   'mode_changed',
   'manual_override',
   'system_error',
+  'stock_adjustment',
+  'supplier_created',
 ]);
 
 export const AuditSeverityEnum = z.enum(['info', 'warning', 'error', 'critical']);
@@ -125,7 +127,7 @@ export const OperatingModeEnum = z.enum(['approval', 'auto_pilot']);
 
 export const UpdateSettingSchema = z.object({
   key: z.string().min(1),
-  value: z.unknown(),
+  value: z.union([z.string(), z.number(), z.boolean(), z.record(z.string(), z.unknown())]),
 });
 
 // ---- Supplier Schemas ----

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { z } from 'zod';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { generatePONumber } from '@/lib/utils/helpers';
 import { CreatePOSchema, UpdatePOStatusSchema } from '@/lib/schemas';
@@ -146,10 +147,16 @@ export async function PATCH(request: Request) {
   try {
     const supabase = createServerSupabaseClient();
     const body = await request.json();
-    const { id, ...statusUpdate } = body;
 
-    if (!id) {
-      return NextResponse.json({ error: 'Missing purchase order ID' }, { status: 400 });
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+    }
+
+    const { id, ...statusUpdate } = body as Record<string, unknown>;
+
+    const idValidation = z.string().uuid('Invalid purchase order UUID').safeParse(id);
+    if (!idValidation.success) {
+      return NextResponse.json({ error: 'Missing or invalid purchase order ID' }, { status: 400 });
     }
 
     const parsed = UpdatePOStatusSchema.safeParse(statusUpdate);
@@ -192,7 +199,7 @@ export async function PATCH(request: Request) {
 
     const actionType = actionMap[parsed.data.status] || 'po_edited';
 
-    await supabase.from('ai_audit_logs').insert({
+    const { error: logErr } = await supabase.from('ai_audit_logs').insert({
       action_type: actionType,
       severity: parsed.data.status === 'cancelled' ? 'warning' : 'info',
       message: `PO ${data.po_number} status changed to ${parsed.data.status}`,
@@ -200,6 +207,10 @@ export async function PATCH(request: Request) {
       related_po_id: id,
       source: 'human',
     });
+
+    if (logErr) {
+      console.error('Failed to log PO status update:', logErr.message);
+    }
 
     return NextResponse.json({ purchase_order: data });
   } catch {

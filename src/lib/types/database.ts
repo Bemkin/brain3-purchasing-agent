@@ -102,7 +102,9 @@ export type AuditActionType =
   | 'ai_error'
   | 'mode_changed'
   | 'manual_override'
-  | 'system_error';
+  | 'system_error'
+  | 'stock_adjustment'
+  | 'supplier_created';
 
 export type AuditSeverity = 'info' | 'warning' | 'error' | 'critical';
 export type AuditSource = 'ai_agent' | 'human' | 'system' | 'cron' | 'email_service';

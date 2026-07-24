@@ -1,9 +1,8 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Search, Bell, Mail, Menu, Package, FileText, Bot, X, CheckCircle2, AlertTriangle, ArrowRight, ExternalLink } from 'lucide-react';
+import { Search, Bell, Mail, Menu, Package, FileText, X, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatCurrency, formatRelativeTime } from '@/lib/utils/helpers';
 import type { InventoryItem, PurchaseOrder } from '@/lib/types/database';
@@ -71,7 +70,7 @@ export function Header({ onOpenMobileMenu }: HeaderProps) {
         }));
         setNotifications(notifs);
       })
-      .catch((err) => {
+      .catch(() => {
         toast.error('Failed to load stock alerts');
       });
 
@@ -84,29 +83,50 @@ export function Header({ onOpenMobileMenu }: HeaderProps) {
           id: po.id,
           po_number: po.po_number,
           recipient: po.supplier?.contact_email || 'supplier@vendor.com',
-          subject: `Purchase Order ${po.po_number} from Donezo/Brain3`,
+          subject: `Purchase Order ${po.po_number} from Brain3`,
           sent_at: po.sent_at || po.created_at,
         }));
         setEmailLogs(logs);
       })
-      .catch(() => {});
+      .catch((err) => {
+        toast.error('Failed to load dispatch logs', { description: String(err) });
+      });
   }, []);
 
-  // 3. Live search query execution
+  // 3. Debounce search query input (250ms) to prevent API flooding
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+
   useEffect(() => {
-    if (!searchQuery.trim()) {
-      setSearchResults([]);
+    const handler = setTimeout(() => {
+      setDebouncedQuery(searchQuery);
+    }, 250);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
+
+  // 4. Live search query execution
+  useEffect(() => {
+    let ignore = false;
+    const q = debouncedQuery.trim().toLowerCase();
+    if (!q) {
+      Promise.resolve().then(() => {
+        if (!ignore) {
+          setSearchResults([]);
+          setLoadingSearch(false);
+        }
+      });
       return;
     }
 
-    setLoadingSearch(true);
-    const q = searchQuery.toLowerCase();
+    Promise.resolve().then(() => {
+      if (!ignore) setLoadingSearch(true);
+    });
 
     Promise.all([
       fetch('/api/inventory').then((r) => r.json()),
       fetch('/api/purchase-orders').then((r) => r.json()),
     ])
       .then(([invData, poData]) => {
+        if (ignore) return;
         const invItems: SearchItem[] = ((invData.items || []) as InventoryItem[])
           .filter((i) => i.name.toLowerCase().includes(q) || i.sku.toLowerCase().includes(q) || i.category.toLowerCase().includes(q))
           .slice(0, 4)
@@ -114,28 +134,36 @@ export function Header({ onOpenMobileMenu }: HeaderProps) {
             id: i.id,
             type: 'inventory',
             title: i.name,
-            subtitle: `SKU: ${i.sku} • Stock: ${i.current_stock}/${i.max_stock_capacity}`,
-            badge: i.current_stock <= i.reorder_point ? 'Low Stock' : 'Healthy',
-            url: `/?item=${i.id}`,
+            subtitle: `SKU: ${i.sku} • Stock: ${i.current_stock}`,
+            badge: i.category,
+            url: '/',
           }));
 
         const poItems: SearchItem[] = ((poData.purchase_orders || []) as (PurchaseOrder & { supplier?: { name?: string } })[])
-          .filter((po) => po.po_number.toLowerCase().includes(q) || po.supplier?.name?.toLowerCase().includes(q))
+          .filter((p) => p.po_number.toLowerCase().includes(q) || p.supplier?.name?.toLowerCase().includes(q) || p.status.toLowerCase().includes(q))
           .slice(0, 4)
-          .map((po) => ({
-            id: po.id,
+          .map((p) => ({
+            id: p.id,
             type: 'po',
-            title: `PO ${po.po_number}`,
-            subtitle: `${po.supplier?.name || 'Supplier'} • ${formatCurrency(Number(po.total_amount))}`,
-            badge: po.status.replace('_', ' '),
-            url: `/purchase-orders?po=${po.id}`,
+            title: `PO ${p.po_number}`,
+            subtitle: `Supplier: ${p.supplier?.name || 'Unknown'} • ${formatCurrency(p.total_amount)}`,
+            badge: p.status,
+            url: '/purchase-orders',
           }));
 
         setSearchResults([...invItems, ...poItems]);
       })
-      .catch(() => {})
-      .finally(() => setLoadingSearch(false));
-  }, [searchQuery]);
+      .catch(() => {
+        if (!ignore) setSearchResults([]);
+      })
+      .finally(() => {
+        if (!ignore) setLoadingSearch(false);
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [debouncedQuery]);
 
   // Click outside listener for search & popovers
   useEffect(() => {
@@ -362,11 +390,11 @@ export function Header({ onOpenMobileMenu }: HeaderProps) {
         {/* User Profile Pill */}
         <div className="flex items-center gap-2.5 sm:pl-2 sm:border-l sm:border-gray-200">
           <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[#064e3b] text-white font-bold flex items-center justify-center text-xs sm:text-sm shadow-md">
-            TM
+            {(process.env.NEXT_PUBLIC_USER_NAME || 'Bemnet Kibret').split(' ').map((n) => n[0]).join('').substring(0, 2).toUpperCase()}
           </div>
           <div className="hidden md:block">
-            <p className="text-sm font-bold text-gray-900 leading-tight">Totok Michael</p>
-            <p className="text-[11px] font-medium text-gray-500">tmichael20@gmail.com</p>
+            <p className="text-sm font-bold text-gray-900 leading-tight">{process.env.NEXT_PUBLIC_USER_NAME || 'Bemnet Kibret'}</p>
+            <p className="text-[11px] font-medium text-gray-500">{process.env.NEXT_PUBLIC_USER_EMAIL || 'bemnetkibret4@gmail.com'}</p>
           </div>
         </div>
       </div>

@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { Settings, Zap, Shield, Clock, DollarSign, Save, RefreshCw, Cpu, Mail, Server } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Zap, Shield, DollarSign, Save, Cpu } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function SettingsPage() {
@@ -9,19 +9,26 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
 
-  const fetchSettings = useCallback(async () => {
-    try {
-      const res = await fetch('/api/settings');
-      const data = await res.json();
-      setSettings(data.settings || {});
-    } catch {
-      toast.error('Failed to load settings');
-    } finally {
-      setLoading(false);
-    }
+  useEffect(() => {
+    let ignore = false;
+    const load = async () => {
+      try {
+        const res = await fetch('/api/settings');
+        const data = await res.json();
+        if (!ignore) {
+          setSettings(data.settings || {});
+        }
+      } catch {
+        if (!ignore) toast.error('Failed to load settings');
+      } finally {
+        if (!ignore) setLoading(false);
+      }
+    };
+    load();
+    return () => {
+      ignore = true;
+    };
   }, []);
-
-  useEffect(() => { fetchSettings(); }, [fetchSettings]);
 
   const updateSetting = async (key: string, value: unknown) => {
     setSaving(key);

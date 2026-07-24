@@ -52,7 +52,7 @@ export async function PUT(request: Request) {
 
     const { data, error } = await supabase
       .from('system_settings')
-      .update({ value: JSON.parse(JSON.stringify(value)) })
+      .update({ value: value as unknown as object })
       .eq('key', key)
       .select('id, key, value, updated_at')
       .single();
@@ -63,13 +63,16 @@ export async function PUT(request: Request) {
 
     // Log mode changes to audit
     if (key === 'operating_mode') {
-      await supabase.from('ai_audit_logs').insert({
+      const { error: logErr } = await supabase.from('ai_audit_logs').insert({
         action_type: 'mode_changed',
         severity: 'info',
         message: `Operating mode changed to: ${JSON.stringify(value)}`,
         details: { key, new_value: value },
         source: 'human',
       });
+      if (logErr) {
+        console.error('Failed to log mode change:', logErr.message);
+      }
     }
 
     return NextResponse.json({ setting: data });

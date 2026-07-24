@@ -6,6 +6,13 @@ import { generatePONumber, calculateFallbackReorderQty } from '@/lib/utils/helpe
 import { dispatchPOEmail } from '@/lib/services/email';
 import type { StockCheckResult } from '@/lib/types/database';
 
+interface SupplierInfo {
+  id: string;
+  name: string;
+  contact_email: string;
+  lead_time_days: number;
+}
+
 /**
  * POST /api/cron/check-stock
  * 
@@ -29,8 +36,9 @@ export async function POST(request: Request) {
   const { searchParams } = new URL(request.url);
   const secret = searchParams.get('secret') || request.headers.get('x-cron-secret');
   const isManualTrigger = request.headers.get('x-trigger-source') === 'dashboard';
+  const expectedSecret = process.env.CRON_SECRET;
 
-  if (!isManualTrigger && secret !== process.env.CRON_SECRET) {
+  if (!isManualTrigger && (!expectedSecret || secret !== expectedSecret)) {
     return NextResponse.json({ error: 'Unauthorized cron access' }, { status: 401 });
   }
 
@@ -46,13 +54,16 @@ export async function POST(request: Request) {
 
   try {
     // Step 1: Log initiation
-    await supabase.from('ai_audit_logs').insert({
+    const { error: initLogErr } = await supabase.from('ai_audit_logs').insert({
       action_type: 'stock_check_initiated',
       severity: 'info',
       message: `Autonomous stock check initiated${isManualTrigger ? ' (manual trigger from dashboard)' : ' (cron scheduled)'}`,
       details: { trigger: isManualTrigger ? 'dashboard' : 'cron' },
       source: isManualTrigger ? 'human' : 'cron',
     });
+    if (initLogErr) {
+      console.error('Failed to log stock check initiation:', initLogErr.message);
+    }
 
     // Step 2: Get operating mode
     const { data: modeSetting } = await supabase
@@ -61,8 +72,10 @@ export async function POST(request: Request) {
       .eq('key', 'operating_mode')
       .single();
 
-    const operatingMode = (modeSetting?.value as string)?.replace(/"/g, '') || 'approval';
-    result.mode = operatingMode as 'approval' | 'auto_pilot';
+    const rawMode = modeSetting?.value;
+    const operatingModeStr = typeof rawMode === 'string' ? rawMode.replace(/"/g, '') : typeof rawMode === 'object' && rawMode !== null ? String(rawMode) : 'approval';
+    const operatingMode = operatingModeStr === 'auto_pilot' ? 'auto_pilot' : 'approval';
+    result.mode = operatingMode;
 
     // Step 3: Fetch all active inventory items with supplier info
     const { data: allItems, error: itemsError } = await supabase
@@ -89,25 +102,32 @@ export async function POST(request: Request) {
     result.low_stock_items = lowStockItems.length;
 
     if (lowStockItems.length === 0) {
-      await supabase.from('ai_audit_logs').insert({
+      const { error: emptyLogErr } = await supabase.from('ai_audit_logs').insert({
         action_type: 'stock_check_initiated',
         severity: 'info',
         message: `Stock check complete: All ${result.items_checked} items are above reorder points. No action needed.`,
         details: { items_checked: result.items_checked, duration_ms: Date.now() - startTime },
         source: isManualTrigger ? 'human' : 'cron',
       });
+      if (emptyLogErr) {
+        console.error('Failed to log empty stock check:', emptyLogErr.message);
+      }
 
       // Update last check timestamp
-      await supabase
+      const { error: updateCheckErr } = await supabase
         .from('system_settings')
         .update({ value: JSON.stringify(new Date().toISOString()) })
         .eq('key', 'last_stock_check');
 
+      if (updateCheckErr) {
+        console.error('Failed to update last_stock_check:', updateCheckErr.message);
+      }
+
       return NextResponse.json(result);
     }
 
-    // Log all low-stock items in a SINGLE batch insert (instead of 9 sequential awaits)
-    await supabase.from('ai_audit_logs').insert(
+    // Log all low-stock items in a SINGLE batch insert
+    const { error: lowStockLogErr } = await supabase.from('ai_audit_logs').insert(
       lowStockItems.map((item) => ({
         action_type: 'low_stock_detected',
         severity: item.current_stock === 0 ? 'critical' : 'warning',
@@ -123,6 +143,9 @@ export async function POST(request: Request) {
         source: 'ai_agent',
       }))
     );
+    if (lowStockLogErr) {
+      console.error('Failed to log low stock detection:', lowStockLogErr.message);
+    }
 
     // Step 5: Group by supplier
     const supplierGroups = new Map<string, typeof lowStockItems>();
@@ -136,7 +159,7 @@ export async function POST(request: Request) {
 
     // Step 5b: Perform a SINGLE batch call to Gemini for ALL low-stock items across suppliers
     const allItemsForAI = lowStockItems.map((item) => {
-      const supplier = item.suppliers as unknown as { id: string; name: string; contact_email: string; lead_time_days: number };
+      const supplier = (item.suppliers as unknown as SupplierInfo) || { id: item.supplier_id, name: 'Supplier', contact_email: '', lead_time_days: 3 };
       return {
         id: item.id,
         name: item.name,
@@ -211,15 +234,25 @@ export async function POST(request: Request) {
           }
         };
 
-        if (Array.isArray(jsonParsed)) {
-          for (const item of jsonParsed) {
+        let listToProcess: unknown = jsonParsed;
+        if (jsonParsed && typeof jsonParsed === 'object' && !Array.isArray(jsonParsed)) {
+          const obj = jsonParsed as Record<string, unknown>;
+          if (Array.isArray(obj.suppliers)) listToProcess = obj.suppliers;
+          else if (Array.isArray(obj.orders)) listToProcess = obj.orders;
+          else if (Array.isArray(obj.recommendations)) listToProcess = obj.recommendations;
+          else if (Array.isArray(obj.data)) listToProcess = obj.data;
+          else if (Array.isArray(obj.items)) listToProcess = [obj];
+        }
+
+        if (Array.isArray(listToProcess)) {
+          for (const item of listToProcess) {
             if (item && typeof item === 'object') {
               addResultToMap(item as Record<string, unknown>);
             }
           }
-        } else if (jsonParsed && typeof jsonParsed === 'object') {
-          for (const [key, val] of Object.entries(jsonParsed)) {
-            if (val && typeof val === 'object') {
+        } else if (listToProcess && typeof listToProcess === 'object') {
+          for (const [key, val] of Object.entries(listToProcess)) {
+            if (val && typeof val === 'object' && !Array.isArray(val)) {
               addResultToMap({ supplier_id: key, ...(val as object) });
             }
           }
@@ -235,8 +268,8 @@ export async function POST(request: Request) {
 
     const supplierResults = await Promise.allSettled(
       supplierEntries.map(async ([supplierId, items], index) => {
-        const supplier = items[0].suppliers as unknown as {
-          id: string; name: string; contact_email: string; lead_time_days: number;
+        const supplier = (items[0].suppliers as unknown as SupplierInfo) || {
+          id: supplierId, name: 'Supplier', contact_email: '', lead_time_days: 3,
         };
 
         const itemsForAI = items.map((item) => ({

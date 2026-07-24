@@ -29,14 +29,18 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const [poCount, setPoCount] = useState<number | null>(null);
 
   useEffect(() => {
-    fetch('/api/purchase-orders')
+    fetch('/api/purchase-orders?pageSize=1')
       .then((res) => res.json())
       .then((data) => {
-        if (data.purchase_orders) {
+        if (data.total !== undefined) {
+          setPoCount(data.total);
+        } else if (data.purchase_orders) {
           setPoCount(data.purchase_orders.length);
         }
       })
-      .catch(() => {});
+      .catch((err) => {
+        console.error('Failed to fetch PO count for sidebar badge:', err);
+      });
   }, [pathname]);
 
   const menuItems = [
@@ -47,7 +51,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   ];
 
   const content = (
-    <div className="w-[260px] h-full bg-[#eaedf1] flex flex-col justify-between p-6 overflow-y-auto border-r border-slate-300/90 shadow-xs">
+    <div className="w-65 h-full bg-[#eaedf1] flex flex-col justify-between p-6 overflow-y-auto border-r border-slate-300/90 shadow-xs">
       <div className="space-y-8">
         {/* Brand Header */}
         <div className="flex items-center justify-between">
@@ -158,13 +162,13 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         </div>
         <div>
           <p className="text-sm font-bold text-white leading-tight">Autonomous Agent</p>
-          <p className="text-xs text-gray-300 mt-1">Gemini 3.5 Flash Lite engine active</p>
+          <p className="text-xs text-gray-300 mt-1">Gemini AI engine active</p>
         </div>
         <Link
           href="/settings"
           onClick={() => {
             toast.success('AI Engine Operational', {
-              description: 'Gemini 3.5 Flash Lite • Supabase PostgreSQL Connected • Resend Active',
+              description: 'Gemini AI Engine • Supabase PostgreSQL Connected • Resend Active',
             });
             if (onClose) onClose();
           }}

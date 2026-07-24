@@ -3,11 +3,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   ShoppingCart, Check, X, Send, ChevronDown, ChevronUp,
-  Package, DollarSign, Clock, FileText, Bot, Printer, Building2, Download, ArrowUpRight
+  Package, DollarSign, Clock, FileText, Bot, Printer, Building2, Download, RefreshCw
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatCurrency, formatDate, formatRelativeTime } from '@/lib/utils/helpers';
 import { exportToCSV } from '@/lib/utils/export';
+import { fetchWithCache, invalidateCache } from '@/lib/utils/cache';
 import type { POStatus } from '@/lib/types/database';
 
 interface LineItem {
@@ -52,12 +53,12 @@ export default function PurchaseOrdersPage() {
 
   // Pagination & Filtering State
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const [pageSize] = useState(10);
   const [totalCount, setTotalCount] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
-  const fetchOrders = useCallback(async () => {
+  const fetchOrders = useCallback(async (forceFresh = false) => {
     setLoading(true);
     try {
       const params = new URLSearchParams({
@@ -65,8 +66,8 @@ export default function PurchaseOrdersPage() {
         pageSize: String(pageSize),
         ...(statusFilter !== 'all' ? { status: statusFilter } : {}),
       });
-      const res = await fetch(`/api/purchase-orders?${params.toString()}`);
-      const data = await res.json();
+      const url = `/api/purchase-orders?${params.toString()}`;
+      const data = await fetchWithCache<{ purchase_orders: PurchaseOrder[]; total: number; totalPages: number }>(url, forceFresh);
       setOrders(data.purchase_orders || []);
       setTotalCount(data.total || 0);
       setTotalPages(data.totalPages || 1);
@@ -77,7 +78,33 @@ export default function PurchaseOrdersPage() {
     }
   }, [page, pageSize, statusFilter]);
 
-  useEffect(() => { fetchOrders(); }, [fetchOrders]);
+  useEffect(() => {
+    let ignore = false;
+    const loadData = async () => {
+      try {
+        const params = new URLSearchParams({
+          page: String(page),
+          pageSize: String(pageSize),
+          ...(statusFilter !== 'all' ? { status: statusFilter } : {}),
+        });
+        const url = `/api/purchase-orders?${params.toString()}`;
+        const data = await fetchWithCache<{ purchase_orders: PurchaseOrder[]; total: number; totalPages: number }>(url);
+        if (!ignore) {
+          setOrders(data.purchase_orders || []);
+          setTotalCount(data.total || 0);
+          setTotalPages(data.totalPages || 1);
+        }
+      } catch {
+        if (!ignore) toast.error('Failed to load purchase orders');
+      } finally {
+        if (!ignore) setLoading(false);
+      }
+    };
+    loadData();
+    return () => {
+      ignore = true;
+    };
+  }, [page, pageSize, statusFilter]);
 
   const updateStatus = async (id: string, status: POStatus, poNumber: string) => {
     setActionLoading(id);
@@ -104,7 +131,8 @@ export default function PurchaseOrdersPage() {
             toast.warning('PO approved but email send failed');
           }
         }
-        fetchOrders();
+        invalidateCache('/api/purchase-orders');
+        fetchOrders(true);
       } else {
         toast.error('Failed to update PO status');
       }
@@ -480,17 +508,18 @@ export default function PurchaseOrdersPage() {
                             <button
                               onClick={() => updateStatus(order.id, 'cancelled', order.po_number)}
                               disabled={isLoading}
-                              className="px-4 py-2 rounded-full bg-red-50 text-red-700 font-bold text-xs hover:bg-red-100 transition-all"
+                              className="px-4 py-2 rounded-full bg-red-50 text-red-700 font-bold text-xs hover:bg-red-100 transition-all disabled:opacity-50 flex items-center gap-1.5"
                             >
-                              Reject PO
+                              {isLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : null}
+                              {isLoading ? 'Processing...' : 'Reject PO'}
                             </button>
                             <button
                               onClick={() => updateStatus(order.id, 'approved', order.po_number)}
                               disabled={isLoading}
-                              className="btn-forest py-2 text-xs"
+                              className="btn-forest py-2 text-xs disabled:opacity-50 flex items-center gap-1.5"
                             >
-                              <Check className="w-3.5 h-3.5" />
-                              Approve & Dispatch Email
+                              {isLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                              {isLoading ? 'Approving...' : 'Approve & Dispatch Email'}
                             </button>
                           </>
                         )}

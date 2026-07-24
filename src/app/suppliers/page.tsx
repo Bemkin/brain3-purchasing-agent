@@ -2,11 +2,12 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import {
-  Building2, Mail, Phone, Clock, Package, Plus, Search,
-  Edit2, ExternalLink, ShieldCheck, AlertTriangle, Check, DollarSign, X
+  Building2, Mail, Clock, Package, Plus, Search,
+  Edit2, ShieldCheck, AlertTriangle, DollarSign, X
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatCurrency } from '@/lib/utils/helpers';
+import { fetchWithCache, invalidateCache } from '@/lib/utils/cache';
 
 interface InventoryItem {
   id: string;
@@ -38,6 +39,7 @@ export default function SuppliersPage() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -47,10 +49,9 @@ export default function SuppliersPage() {
     lead_time_days: '3',
   });
 
-  const fetchSuppliers = useCallback(async () => {
+  const fetchSuppliers = useCallback(async (forceFresh = false) => {
     try {
-      const res = await fetch('/api/suppliers');
-      const data = await res.json();
+      const data = await fetchWithCache<{ suppliers: Supplier[] }>('/api/suppliers', forceFresh);
       setSuppliers(data.suppliers || []);
     } catch {
       toast.error('Failed to load suppliers');
@@ -60,8 +61,24 @@ export default function SuppliersPage() {
   }, []);
 
   useEffect(() => {
-    fetchSuppliers();
-  }, [fetchSuppliers]);
+    let ignore = false;
+    const load = async () => {
+      try {
+        const data = await fetchWithCache<{ suppliers: Supplier[] }>('/api/suppliers');
+        if (!ignore) {
+          setSuppliers(data.suppliers || []);
+        }
+      } catch {
+        if (!ignore) toast.error('Failed to load suppliers');
+      } finally {
+        if (!ignore) setLoading(false);
+      }
+    };
+    load();
+    return () => {
+      ignore = true;
+    };
+  }, []);
 
   const handleCreateSupplier = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -70,6 +87,7 @@ export default function SuppliersPage() {
       return;
     }
 
+    setSubmitting(true);
     try {
       const res = await fetch('/api/suppliers', {
         method: 'POST',
@@ -81,13 +99,16 @@ export default function SuppliersPage() {
         toast.success(`Supplier "${formData.name}" created!`);
         setIsAddModalOpen(false);
         setFormData({ name: '', contact_email: '', contact_phone: '', lead_time_days: '3' });
-        fetchSuppliers();
+        invalidateCache('/api/suppliers');
+        fetchSuppliers(true);
       } else {
         const errData = await res.json();
         toast.error(errData.error || 'Failed to create supplier');
       }
     } catch {
       toast.error('Network error');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -95,6 +116,7 @@ export default function SuppliersPage() {
     e.preventDefault();
     if (!editingSupplier) return;
 
+    setSubmitting(true);
     try {
       const res = await fetch('/api/suppliers', {
         method: 'PATCH',
@@ -112,12 +134,15 @@ export default function SuppliersPage() {
         toast.success(`Supplier updated successfully!`);
         setIsEditModalOpen(false);
         setEditingSupplier(null);
-        fetchSuppliers();
+        invalidateCache('/api/suppliers');
+        fetchSuppliers(true);
       } else {
         toast.error('Failed to update supplier');
       }
     } catch {
       toast.error('Network error');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -447,8 +472,8 @@ export default function SuppliersPage() {
                 >
                   Cancel
                 </button>
-                <button type="submit" className="btn-forest text-xs py-2 px-5">
-                  {isEditModalOpen ? 'Save Changes' : 'Create Supplier'}
+                <button type="submit" disabled={submitting} className="btn-forest text-xs py-2 px-5 disabled:opacity-50">
+                  {submitting ? 'Saving...' : isEditModalOpen ? 'Save Changes' : 'Create Supplier'}
                 </button>
               </div>
             </form>

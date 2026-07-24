@@ -76,7 +76,8 @@ CREATE TABLE IF NOT EXISTS public.ai_audit_logs (
                         'stock_check_initiated','low_stock_detected','reorder_analysis_requested',
                         'reorder_analysis_completed','po_generated','po_approved','po_rejected',
                         'po_edited','po_sent','po_cancelled','email_sent','email_failed',
-                        'ai_error','mode_changed','manual_override','system_error'
+                        'ai_error','mode_changed','manual_override','system_error',
+                        'stock_adjustment','supplier_created'
                     )),
     severity        TEXT NOT NULL DEFAULT 'info'
                     CHECK (severity IN ('info','warning','error','critical')),
@@ -102,8 +103,11 @@ CREATE TABLE IF NOT EXISTS public.system_settings (
 -- ============================================================
 CREATE INDEX IF NOT EXISTS idx_inventory_items_supplier_id ON public.inventory_items(supplier_id);
 CREATE INDEX IF NOT EXISTS idx_inventory_items_sku ON public.inventory_items(sku);
+CREATE INDEX IF NOT EXISTS idx_inventory_items_category ON public.inventory_items(category);
 CREATE INDEX IF NOT EXISTS idx_inventory_items_reorder ON public.inventory_items(current_stock, reorder_point) WHERE is_active = true;
+CREATE INDEX IF NOT EXISTS idx_inventory_items_active_stock ON public.inventory_items(is_active, current_stock ASC);
 CREATE INDEX IF NOT EXISTS idx_purchase_orders_status ON public.purchase_orders(status);
+CREATE INDEX IF NOT EXISTS idx_purchase_orders_created_at ON public.purchase_orders(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_purchase_orders_status_created ON public.purchase_orders(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_purchase_orders_supplier_id ON public.purchase_orders(supplier_id);
 CREATE INDEX IF NOT EXISTS idx_po_line_items_po_id ON public.po_line_items(purchase_order_id);
@@ -113,6 +117,7 @@ CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON public.ai_audit_logs(cre
 CREATE INDEX IF NOT EXISTS idx_audit_logs_severity_created ON public.ai_audit_logs(severity, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_source_created ON public.ai_audit_logs(source, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_po_id ON public.ai_audit_logs(related_po_id) WHERE related_po_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_audit_logs_compound ON public.ai_audit_logs(action_type, severity, source, created_at DESC);
 
 -- ============================================================
 -- Updated_at trigger function
@@ -126,18 +131,22 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Apply trigger to all tables with updated_at
+DROP TRIGGER IF EXISTS set_updated_at_suppliers ON public.suppliers;
 CREATE TRIGGER set_updated_at_suppliers
     BEFORE UPDATE ON public.suppliers
     FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
+DROP TRIGGER IF EXISTS set_updated_at_inventory_items ON public.inventory_items;
 CREATE TRIGGER set_updated_at_inventory_items
     BEFORE UPDATE ON public.inventory_items
     FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
+DROP TRIGGER IF EXISTS set_updated_at_purchase_orders ON public.purchase_orders;
 CREATE TRIGGER set_updated_at_purchase_orders
     BEFORE UPDATE ON public.purchase_orders
     FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
+DROP TRIGGER IF EXISTS set_updated_at_system_settings ON public.system_settings;
 CREATE TRIGGER set_updated_at_system_settings
     BEFORE UPDATE ON public.system_settings
     FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();

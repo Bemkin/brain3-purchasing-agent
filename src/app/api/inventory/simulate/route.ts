@@ -53,17 +53,24 @@ export async function POST(request: Request) {
           .eq('id', item.id);
       });
 
-      await Promise.all(updatePromises);
+      const results = await Promise.all(updatePromises);
+      const updateError = results.find((r) => r.error);
+      if (updateError) {
+        console.error('Surge simulation partial update error:', updateError.error?.message);
+      }
 
       // Audit log
       const itemSummaries = selectedItems.map((i) => `${i.name} (${i.sku})`);
-      await supabase.from('ai_audit_logs').insert({
+      const { error: logErr } = await supabase.from('ai_audit_logs').insert({
         action_type: 'stock_adjustment',
         severity: 'warning',
         message: `Randomized sales surge simulated for ${selectedItems.length} items: ${itemSummaries.join(', ')}`,
         details: { items_affected: itemSummaries, count: selectedItems.length },
         source: 'human',
       });
+      if (logErr) {
+        console.error('Failed to log surge simulation:', logErr.message);
+      }
 
       return NextResponse.json({
         success: true,
@@ -86,15 +93,22 @@ export async function POST(request: Request) {
             .update({ current_stock: healthyStock })
             .eq('id', item.id);
         });
-        await Promise.all(resetPromises);
+        const resetResults = await Promise.all(resetPromises);
+        const resetErr = resetResults.find((r) => r.error);
+        if (resetErr) {
+          console.error('Reset stock partial update error:', resetErr.error?.message);
+        }
       }
 
-      await supabase.from('ai_audit_logs').insert({
+      const { error: resetLogErr } = await supabase.from('ai_audit_logs').insert({
         action_type: 'stock_adjustment',
         severity: 'info',
         message: `Inventory stock levels reset to healthy baseline across all items`,
         source: 'human',
       });
+      if (resetLogErr) {
+        console.error('Failed to log stock reset:', resetLogErr.message);
+      }
 
       return NextResponse.json({ success: true, message: 'All stock levels reset to healthy baseline' });
     }

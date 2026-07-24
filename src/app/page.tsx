@@ -1,15 +1,16 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   AlertTriangle, TrendingDown, 
-  RefreshCw, Clock, ArrowUpRight,
-  Sparkles, Download, Flame, RotateCcw, Filter, Plus,
+  RefreshCw, ArrowUpRight,
+  Sparkles, Download, Flame, RotateCcw, Plus,
   ChevronRight, Building2
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { formatCurrency, formatRelativeTime, getStockStatus, getStockHealthPercent, estimateDaysUntilStockout } from '@/lib/utils/helpers';
+import { formatCurrency, formatRelativeTime, getStockStatus } from '@/lib/utils/helpers';
 import { exportToCSV } from '@/lib/utils/export';
+import { fetchWithCache, invalidateCache } from '@/lib/utils/cache';
 import type { InventoryItem, StockCheckResult } from '@/lib/types/database';
 
 interface InventoryItemWithSupplier extends InventoryItem {
@@ -21,27 +22,12 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [auditRunning, setAuditRunning] = useState(false);
   const [simulating, setSimulating] = useState(false);
-  const [lastResult, setLastResult] = useState<StockCheckResult | null>(null);
+  const [, setLastResult] = useState<StockCheckResult | null>(null);
   const [settings, setSettings] = useState<Record<string, unknown>>({});
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [statusFilter] = useState<string>('all');
   const [velocityViewMode, setVelocityViewMode] = useState<'categories' | 'weekly'>('categories');
   const [timeLeftSeconds, setTimeLeftSeconds] = useState(5048); // 01:24:08
-
-  // Live ticking countdown timer for Agent Clock — Auto-triggers stock audit at zero
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setTimeLeftSeconds((prev) => {
-        if (prev <= 1) {
-          triggerStockAudit();
-          const intervalHrs = Number(settings.stock_check_interval_hours) || 6;
-          return intervalHrs * 3600;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [settings.stock_check_interval_hours]);
 
   const formatClockTime = (seconds: number) => {
     const h = Math.floor(seconds / 3600);
@@ -50,14 +36,12 @@ export default function DashboardPage() {
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   };
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (forceFresh = false) => {
     try {
-      const [invRes, setRes] = await Promise.all([
-        fetch('/api/inventory'),
-        fetch('/api/settings'),
+      const [invData, setData] = await Promise.all([
+        fetchWithCache<{ items: InventoryItemWithSupplier[] }>('/api/inventory', forceFresh),
+        fetchWithCache<{ settings: Record<string, unknown> }>('/api/settings', forceFresh),
       ]);
-      const invData = await invRes.json();
-      const setData = await setRes.json();
       setItems(invData.items || []);
       setSettings(setData.settings || {});
     } catch {
@@ -68,11 +52,41 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    fetchData();
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-  }, [fetchData]);
+    let ignore = false;
+    const load = async () => {
+      try {
+        const [invData, setData] = await Promise.all([
+          fetchWithCache<{ items: InventoryItemWithSupplier[] }>('/api/inventory'),
+          fetchWithCache<{ settings: Record<string, unknown> }>('/api/settings'),
+        ]);
+        if (!ignore) {
+          setItems(invData.items || []);
+          const fetchedSettings = setData.settings || {};
+          setSettings(fetchedSettings);
 
-  const triggerStockAudit = async () => {
+          // Calculate remaining seconds dynamically from last_stock_check setting
+          const intervalHrs = Number(fetchedSettings.stock_check_interval_hours) || 6;
+          const intervalSecs = intervalHrs * 3600;
+          if (fetchedSettings.last_stock_check) {
+            const lastCheckTime = new Date(String(fetchedSettings.last_stock_check).replace(/"/g, '')).getTime();
+            if (!isNaN(lastCheckTime)) {
+              const elapsed = Math.floor((Date.now() - lastCheckTime) / 1000);
+              const remaining = intervalSecs - (elapsed % intervalSecs);
+              setTimeLeftSeconds(Math.max(0, remaining));
+            }
+          }
+        }
+      } catch {
+        toast.error('Failed to load dashboard data');
+      } finally {
+        if (!ignore) setLoading(false);
+      }
+    };
+    load();
+    return () => { ignore = true; };
+  }, []);
+
+  const triggerStockAudit = useCallback(async () => {
     setAuditRunning(true);
     toast.info('🤖 Stock audit initiated...', { description: 'AI agent is analyzing inventory levels' });
 
@@ -88,7 +102,8 @@ export default function DashboardPage() {
         toast.success('Stock audit complete!', {
           description: `${data.low_stock_items} low-stock items found, ${data.pos_generated} POs generated`,
         });
-        fetchData();
+        invalidateCache();
+        fetchData(true);
       } else {
         toast.error('Stock audit failed', { description: data.error });
       }
@@ -97,7 +112,22 @@ export default function DashboardPage() {
     } finally {
       setAuditRunning(false);
     }
-  };
+  }, [fetchData]);
+
+  // Live ticking countdown timer for Agent Clock — Auto-triggers stock audit at zero
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setTimeLeftSeconds((prev) => {
+        if (prev <= 1) {
+          triggerStockAudit();
+          const intervalHrs = Number(settings.stock_check_interval_hours) || 6;
+          return intervalHrs * 3600;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [settings.stock_check_interval_hours, triggerStockAudit]);
 
   const handleSimulate = async (action: 'simulate_surge' | 'reset_stock') => {
     setSimulating(true);
@@ -111,7 +141,8 @@ export default function DashboardPage() {
 
       if (res.ok) {
         toast.success(action === 'simulate_surge' ? '🔥 Sales surge simulated! Stock dropped.' : '🔄 Stock levels reset to healthy baseline.');
-        fetchData();
+        invalidateCache();
+        fetchData(true);
       } else {
         toast.error(data.error || 'Simulation failed');
       }
@@ -137,85 +168,87 @@ export default function DashboardPage() {
     toast.success('Inventory matrix exported to CSV');
   };
 
-  // Real Dynamic Metrics Computed from DB
+  // Real Dynamic Metrics Computed from DB (memoized to prevent re-computation on 1s clock ticks)
   const totalItems = items.length;
-  const outOfStock = items.filter((i) => i.current_stock === 0).length;
-  const lowStock = items.filter((i) => i.current_stock > 0 && i.current_stock <= i.reorder_point).length;
-  const healthyStock = items.filter((i) => i.current_stock > i.reorder_point).length;
-  const totalValue = items.reduce((sum, i) => sum + i.current_stock * i.cost_price, 0);
-  const totalDailyVelocity = items.reduce((sum, i) => sum + Number(i.avg_daily_sales), 0);
+  const outOfStock = useMemo(() => items.filter((i) => i.current_stock === 0).length, [items]);
+  const lowStock = useMemo(() => items.filter((i) => i.current_stock > 0 && i.current_stock <= i.reorder_point).length, [items]);
+  const healthyStock = useMemo(() => items.filter((i) => i.current_stock > i.reorder_point).length, [items]);
+  const totalValue = useMemo(() => items.reduce((sum, i) => sum + i.current_stock * i.cost_price, 0), [items]);
+  const totalDailyVelocity = useMemo(() => items.reduce((sum, i) => sum + Number(i.avg_daily_sales), 0), [items]);
   const mode = String(settings.operating_mode || 'approval').replace(/"/g, '');
 
   // Real Category Velocity Breakdown computed 100% from Supabase DB items
-  const categoryVelocityMap = items.reduce((acc, item) => {
-    const cat = item.category || 'General';
-    if (!acc[cat]) acc[cat] = { name: cat, totalVel: 0, itemCount: 0, topItem: item.name };
-    acc[cat].totalVel += Number(item.avg_daily_sales);
-    acc[cat].itemCount += 1;
-    return acc;
-  }, {} as Record<string, { name: string; totalVel: number; itemCount: number; topItem: string }>);
+  const categoryVelocityList = useMemo<{ name: string; totalVel: number; itemCount: number; topItem: string }[]>(() => {
+    const map = items.reduce((acc, item) => {
+      const cat = item.category || 'General';
+      if (!acc[cat]) acc[cat] = { name: cat, totalVel: 0, itemCount: 0, topItem: item.name };
+      acc[cat].totalVel += Number(item.avg_daily_sales);
+      acc[cat].itemCount += 1;
+      return acc;
+    }, {} as Record<string, { name: string; totalVel: number; itemCount: number; topItem: string }>);
+    return Object.values(map).sort((a, b) => b.totalVel - a.totalVel);
+  }, [items]);
 
-  const categoryVelocityList = Object.values(categoryVelocityMap).sort((a, b) => b.totalVel - a.totalVel);
-  const maxCategoryVel = Math.max(...categoryVelocityList.map((c) => c.totalVel), 1);
+  const maxCategoryVel = useMemo(() => Math.max(...categoryVelocityList.map((c: { totalVel: number }) => c.totalVel), 1), [categoryVelocityList]);
 
   // Real Supplier Summary Aggregated from DB
-  const supplierStats = items.reduce((acc, item) => {
-    const name = item.supplier?.name || 'Other Supplier';
-    if (!acc[name]) acc[name] = { name, lowCount: 0, totalCount: 0 };
-    acc[name].totalCount += 1;
-    if (item.current_stock <= item.reorder_point) {
-      acc[name].lowCount += 1;
-    }
-    return acc;
-  }, {} as Record<string, { name: string; lowCount: number; totalCount: number }>);
-
-  const supplierList = Object.values(supplierStats);
+  const supplierList = useMemo<{ name: string; lowCount: number; totalCount: number }[]>(() => {
+    const stats = items.reduce((acc, item) => {
+      const name = item.supplier?.name || 'Other Supplier';
+      if (!acc[name]) acc[name] = { name, lowCount: 0, totalCount: 0 };
+      acc[name].totalCount += 1;
+      if (item.current_stock <= item.reorder_point) {
+        acc[name].lowCount += 1;
+      }
+      return acc;
+    }, {} as Record<string, { name: string; lowCount: number; totalCount: number }>);
+    return Object.values(stats);
+  }, [items]);
 
   // Dynamic Real Stock Velocity — Bar heights scaled proportionally to actual daily sales numbers
-  const todayDayIndex = new Date().getDay(); // 0 = Sun, 1 = Mon, ..., 4 = Thu, 5 = Fri, 6 = Sat
-  const appCreationDayIdx = 4; // Thursday (when app was created & seeded)
+  const velocityBars = useMemo<{ day: string; name: string; pct: number; tag: string; active: boolean; dark: boolean; isToday: boolean }[]>(() => {
+    const todayDayIndex = new Date().getDay(); // 0 = Sun, 1 = Mon, ..., 4 = Thu, 5 = Fri, 6 = Sat
+    const appCreationDayIdx = 4; // Thursday (when app was created & seeded)
 
-  const dayWeights = [
-    { day: 'S', name: 'Sun', weight: 0.65, dayIdx: 0 },
-    { day: 'M', name: 'Mon', weight: 0.95, dayIdx: 1 },
-    { day: 'T', name: 'Tue', weight: 1.05, dayIdx: 2 },
-    { day: 'W', name: 'Wed', weight: 1.25, dayIdx: 3 },
-    { day: 'T', name: 'Thu', weight: 0.85, dayIdx: 4 },
-    { day: 'F', name: 'Fri', weight: 1.10, dayIdx: 5 },
-    { day: 'S', name: 'Sat', weight: 0.75, dayIdx: 6 },
-  ];
+    const dayWeights = [
+      { day: 'S', name: 'Sun', weight: 0.65, dayIdx: 0 },
+      { day: 'M', name: 'Mon', weight: 0.95, dayIdx: 1 },
+      { day: 'T', name: 'Tue', weight: 1.05, dayIdx: 2 },
+      { day: 'W', name: 'Wed', weight: 1.25, dayIdx: 3 },
+      { day: 'T', name: 'Thu', weight: 0.85, dayIdx: 4 },
+      { day: 'F', name: 'Fri', weight: 1.10, dayIdx: 5 },
+      { day: 'S', name: 'Sat', weight: 0.75, dayIdx: 6 },
+    ];
 
-  // Find maximum volume across active days for proportional scaling
-  const activeVolumes = dayWeights.map((w) => {
-    const isAppActiveDay = w.dayIdx >= appCreationDayIdx && w.dayIdx <= todayDayIndex;
-    return isAppActiveDay ? totalDailyVelocity * w.weight : 0;
-  });
-  const maxVolume = Math.max(...activeVolumes, 1);
+    const activeVolumes = dayWeights.map((w) => {
+      const isAppActiveDay = w.dayIdx >= appCreationDayIdx && w.dayIdx <= todayDayIndex;
+      return isAppActiveDay ? totalDailyVelocity * w.weight : 0;
+    });
+    const maxVol = Math.max(...activeVolumes, 1);
 
-  const velocityBars = dayWeights.map((w) => {
-    const isAppActiveDay = w.dayIdx >= appCreationDayIdx && w.dayIdx <= todayDayIndex;
-    const rawVolume = isAppActiveDay ? totalDailyVelocity * w.weight : 0;
-    const dailyVolumeStr = rawVolume.toFixed(1);
-    
-    // Height percentage scaled strictly proportional to actual numerical volume
-    const pct = rawVolume === 0 ? 12 : Math.max(25, Math.round((rawVolume / maxVolume) * 100));
-    const isToday = w.dayIdx === todayDayIndex;
+    return dayWeights.map((w) => {
+      const isAppActiveDay = w.dayIdx >= appCreationDayIdx && w.dayIdx <= todayDayIndex;
+      const rawVolume = isAppActiveDay ? totalDailyVelocity * w.weight : 0;
+      const dailyVolumeStr = rawVolume.toFixed(1);
+      
+      const pct = rawVolume === 0 ? 12 : Math.max(25, Math.round((rawVolume / maxVol) * 100));
+      const isToday = w.dayIdx === todayDayIndex;
 
-    return {
-      day: w.day,
-      name: w.name,
-      pct,
-      tag: `${dailyVolumeStr}/d`,
-      active: isAppActiveDay,
-      dark: isToday, // Current day highlighted as solid Forest Green
-      isToday,
-    };
-  });
+      return {
+        day: w.day,
+        name: w.name,
+        pct,
+        tag: `${dailyVolumeStr}/d`,
+        active: isAppActiveDay,
+        dark: isToday,
+        isToday,
+      };
+    });
+  }, [totalDailyVelocity]);
 
-  const categories = Array.from(new Set(items.map((i) => i.category))).filter(Boolean);
+  const categories = useMemo<string[]>(() => Array.from(new Set(items.map((i) => i.category))).filter(Boolean), [items]);
 
   const filteredItems = items.filter((item) => {
-    const status = getStockStatus(item.current_stock, item.reorder_point, item.min_stock_level);
     const matchesCategory = categoryFilter === 'all' || item.category === categoryFilter;
     const matchesStatus =
       statusFilter === 'all' ? true :
@@ -358,7 +391,7 @@ export default function DashboardPage() {
       {/* Row 2: Analytics & Quick Action Widgets */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
         {/* Left 6 cols: Recreated Stock Velocity Analytics Card */}
-        <div className="lg:col-span-6 card-brain3 p-6 flex flex-col justify-between min-h-[290px]">
+        <div className="lg:col-span-6 card-brain3 p-6 flex flex-col justify-between min-h-72.5">
           <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
             <div>
               <h3 className="text-base font-bold text-gray-900">Stock Velocity Analytics</h3>
@@ -399,7 +432,7 @@ export default function DashboardPage() {
           {/* Mode 1: Categories View (100% Real DB Data) */}
           {velocityViewMode === 'categories' ? (
             <div className="space-y-3 my-auto py-2">
-              {categoryVelocityList.slice(0, 4).map((cat) => {
+              {categoryVelocityList.slice(0, 4).map((cat: { name: string; totalVel: number }) => {
                 const pct = Math.round((cat.totalVel / maxCategoryVel) * 100);
                 return (
                   <div key={cat.name} className="space-y-1">
@@ -409,7 +442,7 @@ export default function DashboardPage() {
                     </div>
                     <div className="h-3 w-full bg-gray-100 rounded-full overflow-hidden p-0.5 border border-gray-200">
                       <div
-                        className="h-full bg-gradient-to-r from-emerald-600 to-[#064e3b] rounded-full transition-all duration-500"
+                        className="h-full bg-linear-to-r from-emerald-600 to-[#064e3b] rounded-full transition-all duration-500"
                         style={{ width: `${Math.max(8, pct)}%` }}
                       />
                     </div>
@@ -420,7 +453,7 @@ export default function DashboardPage() {
           ) : (
             /* Mode 2: Clean Weekly View */
             <div className="flex items-end justify-between gap-2 sm:gap-3 h-44 pt-4 px-2">
-              {velocityBars.map((bar, i) => (
+              {velocityBars.map((bar: { day: string; name: string; pct: number; tag: string; active: boolean; dark: boolean }, i: number) => (
                 <div key={i} className="flex-1 flex flex-col items-center gap-2 h-full justify-end group" title={`${bar.name}: ${bar.tag}`}>
                   {bar.active && (
                     <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-emerald-100/90 text-emerald-800 font-mono">
@@ -481,14 +514,14 @@ export default function DashboardPage() {
           </div>
 
           <div className="space-y-3">
-            {supplierList.slice(0, 4).map((s, i) => (
+            {supplierList.slice(0, 4).map((s: { name: string; lowCount: number; totalCount: number }, i: number) => (
               <div key={i} className="flex items-center justify-between p-2.5 rounded-xl hover:bg-gray-50 transition-all border border-gray-100">
                 <div className="flex items-center gap-2.5">
                   <div className="w-8 h-8 rounded-xl bg-emerald-50 text-[#064e3b] font-bold flex items-center justify-center text-xs">
                     <Building2 className="w-4 h-4" />
                   </div>
                   <div>
-                    <p className="text-xs font-bold text-gray-900 leading-tight truncate max-w-[130px]">{s.name}</p>
+                    <p className="text-xs font-bold text-gray-900 leading-tight truncate max-w-32.5">{s.name}</p>
                     <p className={`text-[10px] font-semibold ${s.lowCount > 0 ? 'text-amber-700' : 'text-gray-400'}`}>
                       {s.lowCount > 0 ? `${s.lowCount} Low SKUs` : `${s.totalCount} Healthy SKUs`}
                     </p>
@@ -517,7 +550,7 @@ export default function DashboardPage() {
                 className="bg-gray-50 border border-gray-200 rounded-xl px-2.5 py-1 text-xs font-semibold text-gray-700 focus:outline-none"
               >
                 <option value="all">All Categories</option>
-                {categories.map((c) => (
+                {categories.map((c: string) => (
                   <option key={c} value={c}>{c}</option>
                 ))}
               </select>
@@ -594,7 +627,7 @@ export default function DashboardPage() {
           {/* Semi-Circle Donut Graphic */}
           <div className="flex flex-col items-center justify-center my-4">
             <div className="relative w-36 h-20 overflow-hidden flex items-end justify-center">
-              <div className="w-36 h-36 rounded-full border-[14px] border-emerald-700 border-b-transparent border-l-transparent transform -rotate-45" />
+              <div className="w-36 h-36 rounded-full border-14 border-emerald-700 border-b-transparent border-l-transparent transform -rotate-45" />
               <div className="absolute text-center bottom-0">
                 <span className="text-2xl font-extrabold text-gray-900 tracking-tight">
                   {totalItems > 0 ? Math.round((healthyStock / totalItems) * 100) : 0}%

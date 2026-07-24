@@ -1,13 +1,32 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { Resend } from 'resend';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+interface SupplierRelation {
+  id: string;
+  name: string;
+  contact_email: string;
+  contact_phone: string | null;
+}
+
+interface LineItemRelation {
+  id: string;
+  quantity_ordered: number;
+  unit_cost: number;
+  total_cost: number;
+  inventory_items: { id: string; name: string; sku: string } | null;
+}
 
 /**
  * Helper service function to send PO invoice emails via Resend.
  * Works seamlessly in serverless functions, cron routes, and API endpoints.
  */
 export async function dispatchPOEmail(purchaseOrderId: string) {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    throw new Error('Missing RESEND_API_KEY environment variable');
+  }
+
+  const resend = new Resend(apiKey);
   const supabase = createServerSupabaseClient();
 
   // Fetch PO with supplier and line items
@@ -25,7 +44,7 @@ export async function dispatchPOEmail(purchaseOrderId: string) {
   }
 
   // Fetch line items with product names
-  const { data: lineItems, error: liError } = await supabase
+  const { data: lineItemsData, error: liError } = await supabase
     .from('po_line_items')
     .select(`
       id, quantity_ordered, unit_cost, total_cost,
@@ -37,11 +56,19 @@ export async function dispatchPOEmail(purchaseOrderId: string) {
     throw new Error(`Failed to fetch line items: ${liError.message}`);
   }
 
-  const supplier = po.suppliers as unknown as { id: string; name: string; contact_email: string; contact_phone: string | null };
+  const rawSupplier = po.suppliers;
+  const supplier: SupplierRelation = Array.isArray(rawSupplier) ? rawSupplier[0] : (rawSupplier as unknown as SupplierRelation);
+  const lineItems: LineItemRelation[] = (lineItemsData || []).map((li) => ({
+    id: String(li.id),
+    quantity_ordered: Number(li.quantity_ordered),
+    unit_cost: Number(li.unit_cost),
+    total_cost: Number(li.total_cost),
+    inventory_items: Array.isArray(li.inventory_items) ? li.inventory_items[0] : li.inventory_items,
+  }));
 
   // Build email HTML
-  const itemRows = (lineItems || []).map((li) => {
-    const item = li.inventory_items as unknown as { name: string; sku: string };
+  const itemRows = lineItems.map((li) => {
+    const item = li.inventory_items || { name: 'Item', sku: 'N/A' };
     return `
       <tr>
         <td style="padding: 10px; border-bottom: 1px solid #e5e7eb;">${item.name}</td>
@@ -93,20 +120,27 @@ export async function dispatchPOEmail(purchaseOrderId: string) {
       </div>
     </div>`;
 
-  // Send email via Resend
-  const FREE_TIER_RECIPIENT = 'bemnetkibret4@gmail.com';
-  const recipientEmail = process.env.RESEND_RECIPIENT_EMAIL || FREE_TIER_RECIPIENT;
+  // Resend free tier restriction: onboarding@resend.dev can ONLY send to account owner's verified email.
   const senderEmail = process.env.RESEND_FROM_EMAIL || 'Brain3 AI Purchasing Agent <onboarding@resend.dev>';
+  const isDemoTestingDomain = senderEmail.includes('resend.dev');
+  const fallbackDemoEmail = process.env.NOTIFICATION_EMAIL || process.env.RESEND_RECIPIENT_EMAIL || 'bemnetkibret4@gmail.com';
+  const actualTargetEmail = isDemoTestingDomain ? fallbackDemoEmail : supplier.contact_email;
+
+  const demoBannerHtml = isDemoTestingDomain
+    ? `<div style="background: #ecfdf5; border: 1px solid #10b981; padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; font-size: 13px; color: #065f46;">
+        <strong>📌 Demo Dispatch Notice:</strong> Originally addressed to vendor <strong>${supplier.name} (${supplier.contact_email})</strong>. Delivered to target demo email: <code>${actualTargetEmail}</code>.
+      </div>`
+    : '';
 
   const { data: emailResult, error: emailError } = await resend.emails.send({
     from: senderEmail,
-    to: [recipientEmail],
+    to: [actualTargetEmail],
     subject: `Purchase Order ${po.po_number} — ${supplier.name}`,
-    html: emailHtml,
+    html: demoBannerHtml + emailHtml,
   });
 
   if (emailError) {
-    await supabase.from('ai_audit_logs').insert({
+    const { error: logErr } = await supabase.from('ai_audit_logs').insert({
       action_type: 'email_failed',
       severity: 'error',
       message: `Failed to send PO ${po.po_number} email to ${supplier.contact_email}: ${emailError.message}`,
@@ -114,21 +148,28 @@ export async function dispatchPOEmail(purchaseOrderId: string) {
       related_po_id: po.id,
       source: 'email_service',
     });
+    if (logErr) {
+      console.error('Failed to insert audit log for email failure:', logErr.message);
+    }
 
     throw new Error(`Resend email error: ${emailError.message}`);
   }
 
   // Update PO status to 'sent'
-  await supabase
+  const { error: poUpdateErr } = await supabase
     .from('purchase_orders')
     .update({ status: 'sent', sent_at: new Date().toISOString() })
     .eq('id', po.id);
 
+  if (poUpdateErr) {
+    console.error(`Failed to update PO ${po.id} status to sent:`, poUpdateErr.message);
+  }
+
   // Log email success
-  await supabase.from('ai_audit_logs').insert({
+  const { error: logSuccessErr } = await supabase.from('ai_audit_logs').insert({
     action_type: 'email_sent',
     severity: 'info',
-    message: `PO ${po.po_number} emailed to ${supplier.name} (${recipientEmail})`,
+    message: `PO ${po.po_number} emailed to ${supplier.name} (${actualTargetEmail})`,
     details: {
       po_number: po.po_number,
       supplier: supplier.name,
@@ -138,6 +179,10 @@ export async function dispatchPOEmail(purchaseOrderId: string) {
     related_po_id: po.id,
     source: 'email_service',
   });
+
+  if (logSuccessErr) {
+    console.error('Failed to insert audit log for email success:', logSuccessErr.message);
+  }
 
   return { emailId: emailResult?.id, poNumber: po.po_number };
 }

@@ -86,13 +86,17 @@ export async function POST(request: Request) {
     }
 
     // Audit log
-    await supabase.from('ai_audit_logs').insert({
+    const { error: logErr } = await supabase.from('ai_audit_logs').insert({
       action_type: 'supplier_created',
       severity: 'info',
       message: `New supplier created: ${name} (${contact_email})`,
       details: { supplier_id: supplier.id, name, contact_email },
       source: 'human',
     });
+
+    if (logErr) {
+      console.error('Failed to log supplier creation:', logErr.message);
+    }
 
     return NextResponse.json({ supplier }, { status: 201 });
   } catch {

@@ -8,6 +8,7 @@ import {
 import { toast } from 'sonner';
 import { formatRelativeTime, formatDate } from '@/lib/utils/helpers';
 import { exportToCSV } from '@/lib/utils/export';
+import { fetchWithCache, invalidateCache } from '@/lib/utils/cache';
 import type { AuditLog, AuditSeverity, AuditSource } from '@/lib/types/database';
 
 const severityConfig: Record<AuditSeverity, { icon: React.ElementType; color: string; badge: string }> = {
@@ -34,19 +35,19 @@ export default function AuditLogPage() {
 
   // Pagination State
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(15);
+  const [pageSize] = useState(15);
   const [totalLogs, setTotalLogs] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
 
-  const fetchLogs = useCallback(async () => {
+  const fetchLogs = useCallback(async (forceFresh = false) => {
     try {
       const params = new URLSearchParams({
         page: String(page),
         pageSize: String(pageSize),
         ...(severityFilter && severityFilter !== 'all' ? { severity: severityFilter } : {}),
       });
-      const res = await fetch(`/api/audit-logs?${params}`);
-      const data = await res.json();
+      const url = `/api/audit-logs?${params}`;
+      const data = await fetchWithCache<{ logs: AuditLog[]; total: number; totalPages: number }>(url, forceFresh);
       setLogs(data.logs || []);
       setTotalLogs(data.total || 0);
       setTotalPages(data.totalPages || 1);
@@ -58,11 +59,41 @@ export default function AuditLogPage() {
     }
   }, [page, pageSize, severityFilter]);
 
-  useEffect(() => { fetchLogs(); }, [fetchLogs]);
+  useEffect(() => {
+    let ignore = false;
+    const load = async () => {
+      const params = new URLSearchParams({
+        page: String(page),
+        pageSize: String(pageSize),
+        ...(severityFilter && severityFilter !== 'all' ? { severity: severityFilter } : {}),
+      });
+      const url = `/api/audit-logs?${params}`;
+      try {
+        const data = await fetchWithCache<{ logs: AuditLog[]; total: number; totalPages: number }>(url);
+        if (!ignore) {
+          setLogs(data.logs || []);
+          setTotalLogs(data.total || 0);
+          setTotalPages(data.totalPages || 1);
+        }
+      } catch {
+        if (!ignore) toast.error('Failed to load audit logs');
+      } finally {
+        if (!ignore) {
+          setLoading(false);
+          setRefreshing(false);
+        }
+      }
+    };
+    load();
+    return () => {
+      ignore = true;
+    };
+  }, [page, pageSize, severityFilter]);
 
   const refresh = () => {
     setRefreshing(true);
-    fetchLogs();
+    invalidateCache('/api/audit-logs');
+    fetchLogs(true);
   };
 
   const handleExportCSV = () => {
