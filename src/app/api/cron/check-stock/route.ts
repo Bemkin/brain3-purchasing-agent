@@ -127,22 +127,18 @@ export async function POST(request: Request) {
     }
 
     // Log all low-stock items in a SINGLE batch insert
-    const { error: lowStockLogErr } = await supabase.from('ai_audit_logs').insert(
-      lowStockItems.map((item) => ({
-        action_type: 'low_stock_detected',
-        severity: item.current_stock === 0 ? 'critical' : 'warning',
-        message: `Low stock: ${item.name} (${item.sku}) — ${item.current_stock} units remaining (reorder point: ${item.reorder_point})`,
-        details: {
-          item_name: item.name,
-          sku: item.sku,
-          current_stock: item.current_stock,
-          reorder_point: item.reorder_point,
-          avg_daily_sales: item.avg_daily_sales,
-        },
-        related_item_id: item.id,
-        source: 'ai_agent',
-      }))
-    );
+    // Step 4b: Log low stock summary in a single query (prevents N roundtrips)
+    const { error: lowStockLogErr } = await supabase.from('ai_audit_logs').insert({
+      action_type: 'low_stock_detected',
+      severity: lowStockItems.some((i) => i.current_stock === 0) ? 'critical' : 'warning',
+      message: `Low stock detected for ${lowStockItems.length} items across ${new Set(lowStockItems.map((i) => i.supplier_id)).size} suppliers`,
+      details: {
+        low_stock_count: lowStockItems.length,
+        critical_out_of_stock: lowStockItems.filter((i) => i.current_stock === 0).length,
+        skus: lowStockItems.map((i) => i.sku),
+      },
+      source: 'ai_agent',
+    });
     if (lowStockLogErr) {
       console.error('Failed to log low stock detection:', lowStockLogErr.message);
     }
@@ -187,15 +183,15 @@ export async function POST(request: Request) {
       }),
       // Pre-fetch PO count while AI is thinking (needed for PO numbering)
       supabase.from('purchase_orders').select('id', { count: 'exact', head: true }),
-      // The Gemini call — the main bottleneck
+      // The Gemini call — optimized for ultra-fast response
       genAI.models.generateContent({
         model: GEMINI_MODEL,
         contents: buildReorderUserPrompt(allItemsForAI),
         config: {
           systemInstruction: buildReorderSystemPrompt(),
-          temperature: 0.1,
+          temperature: 0,
           responseMimeType: 'application/json',
-          maxOutputTokens: 8192,
+          maxOutputTokens: 2048,
         },
       }).catch((err: Error) => err),
     ]);
