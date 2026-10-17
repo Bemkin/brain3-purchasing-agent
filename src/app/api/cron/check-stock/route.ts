@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { genAI, GEMINI_MODEL, buildReorderSystemPrompt, buildReorderUserPrompt } from '@/lib/ai/gemini';
 import { BatchReorderResponseSchema } from '@/lib/schemas';
-import { generatePONumber, calculateFallbackReorderQty } from '@/lib/utils/helpers';
+import { generatePONumber, calculateFallbackReorderQty, resolveAutoPilotCeiling, shouldAutoApprove } from '@/lib/utils/helpers';
 import { dispatchPOEmail } from '@/lib/services/email';
 import type { StockCheckResult } from '@/lib/types/database';
 
@@ -76,6 +76,13 @@ export async function POST(request: Request) {
     const operatingModeStr = typeof rawMode === 'string' ? rawMode.replace(/"/g, '') : typeof rawMode === 'object' && rawMode !== null ? String(rawMode) : 'approval';
     const operatingMode = operatingModeStr === 'auto_pilot' ? 'auto_pilot' : 'approval';
     result.mode = operatingMode;
+
+    // Step 2b: Auto-Pilot spending ceiling. Orders above it fall back to Approval Mode.
+    const { data: ceilingSettings } = await supabase
+      .from('system_settings')
+      .select('key, value')
+      .in('key', ['po_approval_threshold_usd', 'max_auto_pilot_po_amount']);
+    const autoPilotCeiling = resolveAutoPilotCeiling(ceilingSettings ?? []);
 
     // Step 3: Fetch all active inventory items with supplier info
     const { data: allItems, error: itemsError } = await supabase
@@ -356,7 +363,9 @@ export async function POST(request: Request) {
           0
         );
 
-        const poStatus = operatingMode === 'auto_pilot' ? 'approved' : 'pending_approval';
+        const autoApprove = shouldAutoApprove(operatingMode, totalAmount, autoPilotCeiling);
+        const heldOverCeiling = operatingMode === 'auto_pilot' && !autoApprove;
+        const poStatus = autoApprove ? 'approved' : 'pending_approval';
 
         const { data: po, error: poError } = await supabase
           .from('purchase_orders')
@@ -386,6 +395,8 @@ export async function POST(request: Request) {
           item_count: reorderItems.length,
           mode: operatingMode,
           used_fallback: usedFallback,
+          auto_pilot_ceiling: autoPilotCeiling,
+          held_over_ceiling: heldOverCeiling,
         };
 
         await Promise.all([
@@ -401,7 +412,7 @@ export async function POST(request: Request) {
           supabase.from('ai_audit_logs').insert({
             action_type: 'po_generated',
             severity: 'info',
-            message: `PO ${po.po_number} generated for ${supplier.name} — $${totalAmount.toFixed(2)} (${reorderItems.length} items) [${operatingMode === 'auto_pilot' ? 'Auto-Pilot' : 'Pending Approval'}]`,
+            message: `PO ${po.po_number} generated for ${supplier.name} — $${totalAmount.toFixed(2)} (${reorderItems.length} items) [${autoApprove ? 'Auto-Pilot' : heldOverCeiling ? `Held for approval: over $${autoPilotCeiling.toFixed(2)} Auto-Pilot ceiling` : 'Pending Approval'}]`,
             details: logDetails,
             related_po_id: po.id,
             source: 'ai_agent',
@@ -426,7 +437,7 @@ export async function POST(request: Request) {
 
         // Auto-pilot email dispatch (in-memory execution, 100% reliable on Vercel)
         let emailSent = false;
-        if (operatingMode === 'auto_pilot') {
+        if (autoApprove) {
           try {
             await dispatchPOEmail(po.id);
             emailSent = true;

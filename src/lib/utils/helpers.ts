@@ -95,3 +95,30 @@ export function calculateFallbackReorderQty(
   const capped = Math.min(raw, maxCapacity - currentStock);
   return Math.max(capped, 1); // At least 1 unit
 }
+
+/** Default Auto-Pilot ceiling, matching the value the settings page shows when none is saved. */
+export const DEFAULT_AUTO_PILOT_CEILING_USD = 500;
+
+/** Parses a system_settings value (stored as JSON, e.g. `500` or `"500"`) into a positive number. */
+export function parseSettingNumber(value: unknown): number | null {
+  const n = typeof value === 'number' ? value : Number(String(value ?? '').replace(/"/g, ''));
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/**
+ * The most a single PO may total before Auto-Pilot hands it to a human.
+ * Uses the stricter of `po_approval_threshold_usd` (editable in Settings) and the
+ * optional hard cap `max_auto_pilot_po_amount`.
+ */
+export function resolveAutoPilotCeiling(settings: { key: string; value: unknown }[]): number {
+  const limits = settings
+    .filter((s) => s.key === 'po_approval_threshold_usd' || s.key === 'max_auto_pilot_po_amount')
+    .map((s) => parseSettingNumber(s.value))
+    .filter((n): n is number => n !== null);
+  return limits.length > 0 ? Math.min(...limits) : DEFAULT_AUTO_PILOT_CEILING_USD;
+}
+
+/** Auto-Pilot approves and sends a PO only when its total is within the ceiling. */
+export function shouldAutoApprove(mode: 'auto_pilot' | 'approval', totalAmount: number, ceiling: number): boolean {
+  return mode === 'auto_pilot' && totalAmount <= ceiling;
+}
